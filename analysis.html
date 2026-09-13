@@ -609,7 +609,7 @@ function buildPlayerOptions(){
   const teamsAll=uniq(ROWS.flatMap(r=>[r.攻撃,r.守備])).sort();
   const players=new Map();
   ROWS.forEach(r=>{
-    if(r.記録種別==="牽制"&&isBat) return;
+    if(r.記録種別==="牽制") return;
     const id=isBat?(r.打者ID||r.打者):(r.投手ID||r.投手), nm=isBat?r.打者:r.投手, tm=isBat?r.攻撃:r.守備;
     const no=isBat?r.打者背番号:r.投手背番号, gr=isBat?r.打者学年:r.投手学年, hand=isBat?r.左右:r.投手左右;
     if(!id||!nm) return;
