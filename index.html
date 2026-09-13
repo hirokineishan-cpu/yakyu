@@ -307,7 +307,7 @@ table.ros td{padding:2px 4px; border-top:1px solid var(--line)}
   </div>
   <div class="read" id="h-sync" style="margin-bottom:14px; justify-content:space-between">
     <span id="h-sync-t" class="hint">未接続</span>
-    <span style="display:flex; gap:6px">
+    <span style="display:flex; gap:6px; align-items:center"><span class="hint" id="h-ver" style="opacity:.6">v16</span>
       <button class="mini" id="h-flush">今すぐ同期</button>
       <button class="mini" id="h-logout">ログアウト</button>
       <button class="mini" id="h-conn">接続設定</button>
@@ -1706,9 +1706,13 @@ $("#dt-in").addEventListener("click",()=>{
   });
   (d.tours||[]).forEach(t=>{ if(!DB.tours.some(x=>x.tid===t.tid)) DB.tours.push(t); });
   Object.keys(d.numbers||{}).forEach(tid=>{ DB.numbers[tid]=Object.assign({},d.numbers[tid],DB.numbers[tid]||{}); });
-  Object.values(d.games||{}).forEach(g=>{ if(!DB.games[g.id]){ DB.games[g.id]=g; ng++; } });
+  Object.values(d.games||{}).forEach(g=>{ if(!DB.games[g.id]){ DB.games[g.id]=g; ng++; } g.pitches.forEach(p=>SYNC.dirtyRow(p.id,g.id)); });
+  Object.values(d.teams||{}).forEach(t=>{ t.players.forEach(p=>{ if(!p.u) p.u=Date.now(); }); if(!t.u) t.u=Date.now(); });
+  Object.keys(d.numbers||{}).forEach(tid=>Object.keys(d.numbers[tid]||{}).forEach(pid=>SYNC.touchNumber(tid,pid)));
+  SYNC.masterDirty();
   save(); $("#ov-data").hidden=true; showHome();
-  toast(`チーム${nt}・選手${np}・試合${ng}件を取り込みました`);
+  toast(`チーム${nt}・選手${np}・試合${ng}件を取り込みました${SYNC.conn.url?"。順次スプレッドシートへ送信します":""}`);
+  SYNC.flush();
 });
 
 /* ================= 同期（スプレッドシート連携） ================= */
@@ -1840,12 +1844,14 @@ const SYNC=(function(){
     catch(e){ $("#lg-msg").textContent=String(e.message||e); } });
   $("#lg-pw").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#lg-ok").click(); });
   $("#lg-conn").addEventListener("click",()=>{ $("#ov-login").hidden=true; showConn(); });
-  $("#h-flush").addEventListener("click",()=>{ if(!conn.url){ showConn(); return; } if(!conn.token){ showLogin(); return; } DB.masterDirty=true; flush(); toast("同期を開始しました"); });
+  $("#h-flush").addEventListener("click",()=>{ if(!conn.url){ showConn(); return; } if(!conn.token){ showLogin(); return; } enqueueAll(); flush(); toast(`全データを送信します（${pending()}件）`); });
   $("#h-logout").addEventListener("click",()=>{ if(pending()&&!window.confirm(`未送信の記録が ${pending()} 件あります。ログアウトしても端末には残りますが、送信は次回ログイン後になります。よろしいですか。`)) return; logout(); showLogin(); });
   $("#h-conn").addEventListener("click",()=>{ DB.standalone=false; save(); showConn(); });
   $("#c-sync").addEventListener("click",()=>{ if(!conn.url){ showConn(); return; } if(!conn.token){ showLogin(); return; } flush(); toast(pending()?`${pending()}件を送信します`:"送信済みです"); });
   return {dirtyRow,deleteRow,afterUndo,masterDirty,touchNumber,renamePlayer,flush,boot,pending,renderStatus,get conn(){return conn;}};
 })();
+if("serviceWorker" in navigator&&location.protocol.startsWith("http")){ navigator.serviceWorker.register("./sw.js").catch(()=>{}); }
+
 if("serviceWorker" in navigator&&location.protocol.startsWith("http")){ navigator.serviceWorker.register("./sw.js").catch(()=>{}); }
 
 /* ---- 起動 ---- */
