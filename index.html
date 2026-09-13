@@ -6,6 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#1f4e36">
+<meta name="robots" content="noindex, nofollow, noarchive">
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./icon-192.png">
 <link rel="icon" href="./icon-192.png">
@@ -249,7 +250,7 @@ table.ros td{padding:2px 4px; border-top:1px solid var(--line)}
 .htitle{font-size:21px; font-weight:900; letter-spacing:.02em}
 .hsub{font-size:12px; color:var(--muted)}
 .glist{display:flex; flex-direction:column; gap:7px}
-.gcard{display:grid; grid-template-columns:5.6em minmax(0,1fr) auto auto; gap:10px; align-items:center;
+.gcard{display:grid; grid-template-columns:6.6em minmax(0,1fr) auto auto; gap:10px; align-items:center;
   background:var(--paper); border:1px solid var(--line); border-radius:10px; padding:10px 12px; box-shadow:var(--shadow); width:100%; text-align:left}
 .gcard.cur{border-color:var(--accent); border-width:2px}
 .gcard .gd{font-family:var(--num); font-size:15px; color:var(--ink2); font-weight:700}
@@ -319,13 +320,17 @@ table.ros td{padding:2px 4px; border-top:1px solid var(--line)}
   </div>
   <div class="read" id="h-sync" style="margin-bottom:14px; justify-content:space-between">
     <span id="h-sync-t" class="hint">未接続</span>
-    <span style="display:flex; gap:6px; align-items:center"><span class="hint" id="h-ver" style="opacity:.6">v17</span>
+    <span style="display:flex; gap:6px; align-items:center"><span class="hint" id="h-ver" style="opacity:.6">v18</span>
       <button class="mini" id="h-flush">今すぐ同期</button>
       <button class="mini" id="h-logout">ログアウト</button>
       <button class="mini" id="h-conn">接続設定</button>
     </span>
   </div>
-  <p class="sec">試合</p>
+  <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px; flex-wrap:wrap">
+    <p class="sec" style="margin:0">試合</p>
+    <label class="flbl" style="margin:0 0 0 auto">表示するチーム</label>
+    <select id="h-team" style="width:auto; min-width:12em"></select>
+  </div>
   <div class="glist" id="glist"></div>
 </div>
 
@@ -601,6 +606,7 @@ table.ros td{padding:2px 4px; border-top:1px solid var(--line)}
       <div>
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
           <p class="sec" style="margin:0">チーム</p>
+          <input type="text" id="tm-q" placeholder="チーム名で検索" style="width:auto; min-width:11em; padding:4px 8px; font-size:13px">
           <button class="mini" id="tm-add" style="margin-left:auto">＋チームを追加</button>
           <button class="mini" id="tm-tour">大会を管理</button>
         </div>
@@ -615,7 +621,8 @@ table.ros td{padding:2px 4px; border-top:1px solid var(--line)}
 <div class="ov" id="ov-srv" hidden>
   <div class="sheet" style="max-width:900px">
     <div class="shd"><span class="sttl">スプレッドシートの試合</span><span class="hint" id="srv-sub"></span>
-      <button class="mini" style="margin-left:auto" id="srv-reload">更新</button>
+      <select id="srv-team" style="width:auto; min-width:11em; margin-left:auto; padding:4px 8px; font-size:13px"></select>
+      <button class="mini" id="srv-reload">更新</button>
       <button class="mini" id="srv-close">閉じる</button></div>
     <div class="sbd">
       <p class="hint" style="margin:0 0 10px">スプレッドシートに保存されている全端末の試合です。<b>閲覧</b>はこの端末に保存せずに開きます（何台でも同時に見られます）。<b>取り込む</b>はこの端末にコピーして修正・球速入力ができるようにします。同じ試合を2台で同時に修正しないでください（後から送った方で上書きされます）。</p>
@@ -783,7 +790,9 @@ function showHome(){
   $("#h-rec").value=DB.recorder||"";
   $("#h-dev").textContent=`端末ID ${DB.deviceId.slice(-6)}　／　保存済み ${Object.keys(DB.games).length}試合`;
   $("#home-sub").textContent=`${Object.keys(DB.teams).length}チーム登録済み　／　この端末のデータはこの端末に保存されます`;
-  const gs=Object.values(DB.games).sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
+  fillTeamFilter($("#h-team"),DB.homeTeam||"");
+  const gsAll=Object.values(DB.games).sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
+  const gs=gsAll.filter(g=>!DB.homeTeam||g.A===DB.homeTeam||g.B===DB.homeTeam);
   $("#glist").innerHTML = gs.length ? gs.map(g=>{
     const n=g.pitches.filter(p=>p.ev!=="牽制").length;
     const mine=(teamOf(g.A)||{}).mine||(teamOf(g.B)||{}).mine;
@@ -797,9 +806,17 @@ function showHome(){
         <button class="mini" data-view="${g.id}">閲覧</button>
         <button class="mini" data-del="${g.id}">削除</button>
       </span></div>`;
-  }).join("") : `<div class="empty">まだ試合がありません。「新しい試合」から始めてください。</div>`;
+  }).join("") : (gsAll.length?`<div class="empty">このチームの試合はありません（${gsAll.length}試合は他チーム）。「表示するチーム」を「すべて」にすると全部出ます。</div>`:`<div class="empty">まだ試合がありません。「新しい試合」から始めてください。</div>`);
   save(); if(typeof SYNC!=="undefined") SYNC.renderStatus();
 }
+// チーム一覧（自チームを先頭、あとは名前順）
+function teamsSorted(){ return Object.values(DB.teams).sort((a,b)=>(b.mine?1:0)-(a.mine?1:0)||a.name.localeCompare(b.name,"ja")); }
+function fillTeamFilter(el,cur){
+  if(!el) return;
+  el.innerHTML=`<option value="">すべてのチーム</option>`+teamsSorted().map(t=>`<option value="${t.tid}">${esc(t.name)}${t.mine?"（自チーム）":""}</option>`).join("");
+  el.value=DB.teams[cur]?cur:"";
+}
+$("#h-team").addEventListener("change",e=>{ DB.homeTeam=e.target.value; save(); showHome(); });
 $("#h-rec").addEventListener("input",e=>{ DB.recorder=e.target.value; save(); });
 $("#glist").addEventListener("click",e=>{
   const o=e.target.closest("[data-open]"); if(o){ openGame(o.dataset.open); return; }
@@ -837,7 +854,7 @@ $("#c-home").addEventListener("click",showHome);
 
 /* ================= 試合設定 ================= */
 function fillTeamSelects(){
-  const ts=Object.values(DB.teams);
+  const ts=teamsSorted();
   const opt=t=>`<option value="${t.tid}">${esc(t.name)}${t.mine?"（自チーム）":""}</option>`;
   $("#gm-a").innerHTML=ts.map(opt).join(""); $("#gm-b").innerHTML=ts.map(opt).join("");
   $("#gm-tour").innerHTML=(DB.tours||[]).map(t=>`<option value="${t.tid}">${esc(t.name)}</option>`).join("")
@@ -846,7 +863,7 @@ function fillTeamSelects(){
 function openGameSetup(){
   ensureTour(); fillTeamSelects();
   $("#gm-date").value=today(); $("#gm-place").value="";
-  const ts=Object.values(DB.teams);
+  const ts=teamsSorted();
   if(ts[0]) $("#gm-a").value=ts[0].tid;
   if(ts[1]) $("#gm-b").value=ts[1].tid;
   gmInfo(); $("#ov-game").hidden=false;
@@ -880,7 +897,7 @@ $("#gm-start").addEventListener("click",()=>{
 });
 
 /* ================= チーム・名簿 ================= */
-let tmSel=null, tmTour=null, mgOpen=false;
+let tmSel=null, tmTour=null, mgOpen=false, tmQ="";
 const numOf2=pid=>((DB.numbers[tmTour]||{})[pid]||"");
 function ensureTour(){ DB.tours=DB.tours||[]; if(!DB.tours.length){ const t={tid:uid("tn"),name:(new Date().getFullYear())+"年度 共通",u:Date.now()}; DB.tours.push(t); DB.numbers[t.tid]={}; if(typeof SYNC!=="undefined") SYNC.masterDirty(); save(); } return DB.tours[0].tid; }
 function openTeams(){ ensureTour(); if(!tmSel) tmSel=Object.keys(DB.teams)[0]; if(!tmTour||!DB.tours.some(x=>x.tid===tmTour)) tmTour=(DB.tours[0]||{}).tid; renderTeams(); $("#ov-team").hidden=false; }
@@ -927,8 +944,10 @@ function mergeTeams(keepTid,dropTid){
   delete DB.teams[dropTid];
 }
 function renderTeams(){
-  $("#tm-list").innerHTML=Object.values(DB.teams).map(t=>
-    `<button class="tcard ${tmSel===t.tid?"sel":""}" data-t="${t.tid}"><b>${esc(t.name)}</b>${t.mine?`<span class="tag mine">自</span>`:""}<span class="c">${activePlayers(t).length}人</span></button>`).join("");
+  const q=(tmQ||"").trim();
+  const list=teamsSorted().filter(t=>!q||t.name.includes(q)||(t.short||"").includes(q));
+  $("#tm-list").innerHTML=list.map(t=>
+    `<button class="tcard ${tmSel===t.tid?"sel":""}" data-t="${t.tid}"><b>${esc(t.name)}</b>${t.mine?`<span class="tag mine">自</span>`:""}<span class="c">${activePlayers(t).length}人</span></button>`).join("")||`<p class="hint">該当するチームがありません</p>`;
   const t=teamOf(tmSel);
   if(!t){ $("#tm-detail").innerHTML=`<p class="hint">チームを選んでください。</p>`; return; }
   const nums=DB.numbers[tmTour]||{};
@@ -1033,6 +1052,7 @@ $("#ov-team").addEventListener("click",e=>{
   }
 });
 $("#ov-team").addEventListener("input",e=>{
+  if(e.target.id==="tm-q"){ tmQ=e.target.value; const keep=$("#tm-q"); const pos=keep.selectionStart; renderTeams(); const el=$("#tm-q"); el.value=tmQ; el.focus(); try{ el.setSelectionRange(pos,pos); }catch(_){} return; }
   const t=teamOf(tmSel); if(!t) return;
   const n=e.target.dataset.n;
   if(n){ DB.numbers[tmTour]=DB.numbers[tmTour]||{}; DB.numbers[tmTour][n]=e.target.value.replace(/\D/g,"").slice(0,2); SYNC.touchNumber(tmTour,n); save(); return; }
@@ -1844,7 +1864,7 @@ function reconstructState(g){
   const lastO=g.pitches.slice().reverse().find(p=>(p.half==="表"?"A":"B")===o);
   if(lastO) g.order[o]=(lastO.order-1+(lastO.pa?1:0)+Lo)%Lo;
 }
-let srvGames=[];
+let srvGames=[], srvTeam="";
 async function openSrv(){
   if(!SYNC.conn.url){ SYNC.showConn(); return; } if(!SYNC.conn.token){ SYNC.showLogin(); return; }
   $("#ov-srv").hidden=false; $("#srv-sub").textContent=""; $("#srv-list").innerHTML=`<div class="empty">読み込み中…</div>`;
@@ -1854,8 +1874,16 @@ async function openSrv(){
   }catch(e){ $("#srv-list").innerHTML=`<div class="empty">取得できませんでした：${esc(String(e.message||e))}<br><span class="hint">Apps Script が古い場合は、Code.gs を貼り直して「デプロイを管理」から新しいバージョンにしてください</span></div>`; }
 }
 function renderSrv(){
-  $("#srv-sub").textContent=`${srvGames.length}試合`;
-  $("#srv-list").innerHTML=srvGames.length?srvGames.map(g=>{
+  const names=Array.from(new Set(srvGames.flatMap(g=>[g.teamA,g.teamB]).filter(Boolean)));
+  const mine=(Object.values(DB.teams).find(t=>t.mine)||{}).name||"";
+  names.sort((a,b)=>(b===mine?1:0)-(a===mine?1:0)||a.localeCompare(b,"ja"));
+  if(srvTeam===""&&DB.homeTeam&&DB.teams[DB.homeTeam]&&names.includes(DB.teams[DB.homeTeam].name)) srvTeam=DB.teams[DB.homeTeam].name;
+  if(srvTeam&&!names.includes(srvTeam)) srvTeam="";
+  $("#srv-team").innerHTML=`<option value="">すべてのチーム</option>`+names.map(n=>`<option value="${esc(n)}">${esc(n)}${n===mine?"（自チーム）":""}</option>`).join("");
+  $("#srv-team").value=srvTeam;
+  const list=srvGames.filter(g=>!srvTeam||g.teamA===srvTeam||g.teamB===srvTeam);
+  $("#srv-sub").textContent=`${list.length}試合${srvTeam?`／全${srvGames.length}`:""}`;
+  $("#srv-list").innerHTML=list.length?list.map(g=>{
     const have=!!DB.games[g.id];
     const sc=(g.scoreA!=null&&g.scoreB!=null)?`　${g.scoreA}－${g.scoreB}`:"";
     return `<div class="srv ${have?"have":""}">
@@ -1867,8 +1895,9 @@ function renderSrv(){
         <button class="mini" data-sv="${esc(g.id)}">閲覧</button>
         <button class="mini" data-si="${esc(g.id)}">${have?"上書きで取り込む":"取り込む"}</button>
       </span></div>`;
-  }).join(""):`<div class="empty">スプレッドシートにはまだ試合がありません。</div>`;
+  }).join(""):`<div class="empty">${srvGames.length?"このチームの試合はありません。":"スプレッドシートにはまだ試合がありません。"}</div>`;
 }
+$("#srv-team").addEventListener("change",e=>{ srvTeam=e.target.value; renderSrv(); });
 async function fetchGame(id){
   try{ await SYNC.pullMaster(); }catch(e){}
   const j=await SYNC.api("getGame",{gameId:id}); if(!j.ok) throw new Error(j.error||"取得に失敗");

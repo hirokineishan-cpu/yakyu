@@ -6,6 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#1f4e36">
+<meta name="robots" content="noindex, nofollow, noarchive">
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./icon-192.png">
 <link rel="icon" href="./icon-192.png">
@@ -174,7 +175,7 @@ textarea{width:100%; min-height:200px; font-family:ui-monospace,Menlo,monospace;
 <div class="wrap">
   <div class="hd">
     <div>
-      <div class="ttl">配球アナライザー</div>
+      <div class="ttl">配球アナライザー <span style="font-size:11px; font-weight:400; opacity:.6">v6</span></div>
       <div class="st" id="src-st">—</div>
     </div>
     <select id="f-year" class="chip" style="display:none; padding:5px 10px"></select>
@@ -188,6 +189,7 @@ textarea{width:100%; min-height:200px; font-family:ui-monospace,Menlo,monospace;
   </div>
 
   <div class="filters" id="filters">
+    <div class="f"><label>チーム</label><select id="f-team" style="min-width:150px"></select></div>
     <div class="f grow"><label id="sel-lbl">打者</label><select class="big" id="f-sel"></select></div>
     <div class="f"><label>期間 から</label><input type="date" id="f-from"></div>
     <div class="f"><label>まで</label><input type="date" id="f-to"></div>
@@ -594,7 +596,18 @@ const fInt=v=>v==null?"—":String(v);
 
 /* ================= フィルタ ================= */
 let MODE="bat";
-const F={sel:"",from:"",to:"",tour:"",gkind:"",opp:"",type:"",band:"",run:"",cnt:"",hand:"",tb:""};
+const F={team:"",sel:"",from:"",to:"",tour:"",gkind:"",opp:"",type:"",band:"",run:"",cnt:"",hand:"",tb:""};
+function mineTeamName(){ if(SRC==="api"&&INDEX) return INDEX.mine||""; return uniq(ROWS.map(r=>r.自チーム))[0]||""; }
+function buildTeamOptions(){
+  const teams=(SRC==="api"&&INDEX)?INDEX.teams.slice():uniq(ROWS.flatMap(r=>[r.攻撃,r.守備])).sort();
+  const mine=mineTeamName();
+  if(mine&&teams.includes(mine)){ teams.splice(teams.indexOf(mine),1); teams.unshift(mine); }
+  if(!F.team&&F.team!=="__all"){ F.team=mine&&teams.includes(mine)?mine:"__all"; }
+  if(F.team!=="__all"&&!teams.includes(F.team)) F.team="__all";
+  const el=$("#f-team");
+  el.innerHTML=`<option value="__all">すべてのチーム</option>`+teams.map(t=>`<option value="${esc(t)}">${esc(t)}${t===mine?"（自チーム）":""}</option>`).join("");
+  el.value=F.team;
+}
 function uniq(arr){ return Array.from(new Set(arr.filter(x=>x!=null&&x!==""))); }
 function fillSel(id,vals,allLabel,cur){
   const el=$(id); el.innerHTML=`<option value="">${esc(allLabel)}</option>`+vals.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join("");
@@ -606,11 +619,12 @@ function fillSelGroups(id,groups,allLabel,cur){
   el.value=all.includes(cur)?cur:"";
 }
 function buildPlayerOptions(){
+  buildTeamOptions();
   const el=$("#f-sel");
   const isBat=MODE==="bat";
   if(SRC==="api"&&INDEX){
-    const ps=INDEX.players.filter(p=>p.side===(isBat?"bat":"pit"));
-    const teams=INDEX.teams;
+    const ps=INDEX.players.filter(p=>p.side===(isBat?"bat":"pit")&&(F.team==="__all"||p.tm===F.team));
+    const teams=INDEX.teams.filter(t=>F.team==="__all"||t===F.team);
     let h="";
     teams.forEach(tm=>{ const list=ps.filter(p=>p.tm===tm).sort((a,b)=>b.n-a.n); if(!list.length) return;
       h+=`<optgroup label="${esc(tm)}"><option value="T:${esc(tm)}">${esc(tm)}　チーム全体</option>`;
@@ -620,13 +634,13 @@ function buildPlayerOptions(){
     if(!Array.from(el.options).some(o=>o.value===F.sel)){ const sorted=ps.slice().sort((a,b)=>b.n-a.n); const mine=sorted.find(p=>INDEX.mine&&p.tm===INDEX.mine)||sorted[0]; F.sel=mine?"P:"+mine.id:(el.options[0]?el.options[0].value:""); }
     el.value=F.sel; return;
   }
-  const teamsAll=uniq(ROWS.flatMap(r=>[r.攻撃,r.守備])).sort();
+  const teamsAll=uniq(ROWS.flatMap(r=>[r.攻撃,r.守備])).sort().filter(t=>F.team==="__all"||t===F.team);
   const players=new Map();
   ROWS.forEach(r=>{
     if(r.記録種別==="牽制") return;
     const id=isBat?(r.打者ID||r.打者):(r.投手ID||r.投手), nm=isBat?r.打者:r.投手, tm=isBat?r.攻撃:r.守備;
     const no=isBat?r.打者背番号:r.投手背番号, gr=isBat?r.打者学年:r.投手学年, hand=isBat?r.左右:r.投手左右;
-    if(!id||!nm) return;
+    if(!id||!nm) return; if(F.team!=="__all"&&tm!==F.team) return;
     const cur=players.get(id)||{id,nm,tm,no,gr,hand,n:0,last:""};
     cur.n++; if(r.日付>=cur.last){ cur.last=r.日付; cur.no=no; cur.gr=gr; cur.nm=nm; cur.tm=tm; }
     players.set(id,cur);
@@ -1000,6 +1014,7 @@ function renderPit(rows,a,label){
 /* ================= イベント ================= */
 $$(".tab").forEach(b=>b.addEventListener("click",()=>{ MODE=b.dataset.mode; $$(".tab").forEach(x=>x.classList.toggle("on",x===b)); F.sel=""; buildPlayerOptions(); buildFilterOptions(); if(SRC==="api") loadSel(); else render(); }));
 $("#f-sel").addEventListener("change",e=>{ F.sel=e.target.value; if(SRC==="api") loadSel(); else render(); });
+$("#f-team").addEventListener("change",e=>{ F.team=e.target.value; F.sel=""; buildPlayerOptions(); if(SRC==="api") loadSel(); else render(); });
 [["#f-from","from"],["#f-to","to"],["#f-tour","tour"],["#f-gkind","gkind"],["#f-opp","opp"],["#f-type","type"],["#f-band","band"],["#f-run","run"],["#f-cnt","cnt"],["#f-hand","hand"],["#f-tb","tb"]]
   .forEach(([id,k])=>$(id).addEventListener("change",e=>{ F[k]=e.target.value; render(); }));
 $("#f-reset").addEventListener("click",()=>{ Object.assign(F,{from:"",to:"",tour:"",gkind:"",opp:"",type:"",band:"",run:"",cnt:"",hand:"",tb:""}); buildFilterOptions(); render(); });
