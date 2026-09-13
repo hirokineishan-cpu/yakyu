@@ -301,6 +301,15 @@ const NOT_AB=["犠打","犠飛","四球","死球","打撃妨害",""];
 const SWING=["空振り","ファウル","インプレー"], STRIKE=["見逃し","空振り","ファウル","インプレー"];
 const BANDS=["〜114","115-119","120-124","125-129","130-134","135-139","140〜"];
 const RUNS=["走者なし","一塁のみ","得点圏"], CNTS=["初球","2ストライク","3ボール","その他"];
+const RUNS8=["走者なし","一塁","二塁","三塁","一二塁","一三塁","二三塁","満塁"];
+const CNT12=[0,1,2,3].flatMap(b=>[0,1,2].map(s=>`${b}-${s}`));
+function runnerDetail(r){ r=String(r==null?"":r).replace(/\D/g,""); r=("000"+r).slice(-3); const k=r[0]+r[1]+r[2];
+  return {"000":"走者なし","100":"一塁","010":"二塁","001":"三塁","110":"一二塁","101":"一三塁","011":"二三塁","111":"満塁"}[k]||"走者なし"; }
+// 絞り込み条件（まとめ／個別のどちらでも一致させる）
+const runMatch=(r,v)=>!v||r.走者区分===v||r.走者詳細===v||(v==="走者あり"&&r.走者区分!=="走者なし");
+const cntMatch=(r,v)=>!v||r.カウント区分===v||r.カウント===v||(v==="追い込まれ"&&r.S>=2)||(v==="ボール先行"&&r.B>r.S)||(v==="ストライク先行"&&r.S>r.B&&r.S<2)||(v==="平行カウント"&&r.B===r.S&&r.B>0);
+// 全パターンを必ず並べる（記録が無い行も 0 で出す）
+function rowsAll(m,order){ return order.map(k=>({label:k,a:m.get(k)||acc()})); }
 const DIRS=["レフト線","レフト","左中間","センター","右中間","ライト","ライト線"];
 function veloBand(v){ const n=Number(v); if(!n) return "未入力"; if(n<115) return "〜114"; if(n<120) return "115-119"; if(n<125) return "120-124"; if(n<130) return "125-129"; if(n<135) return "130-134"; if(n<140) return "135-139"; return "140〜"; }
 function runnerCat(r){ r=String(r==null?"":r).replace(/\D/g,""); r=("000"+r).slice(-3); if(r==="000") return "走者なし"; if(r[1]==="1"||r[2]==="1") return "得点圏"; return "一塁のみ"; }
@@ -332,7 +341,7 @@ function normalize(o){
   r.球種=r.球種||"未入力"; if(r.球種==="") r.球種="未入力";
   r.投球ゾーン=(r.投球ゾーン&&r.投球ゾーン!=="未入力")?String(r.投球ゾーン):"";
   r.構えゾーン=(r.構えゾーン&&r.構えゾーン!=="未入力")?String(r.構えゾーン):"";
-  r.球速帯=veloBand(r.球速); r.走者区分=runnerCat(r.走者); r.カウント区分=countCat(r.B,r.S);
+  r.球速帯=veloBand(r.球速); r.走者区分=runnerCat(r.走者); r.走者詳細=runnerDetail(r.走者); r.カウント区分=countCat(r.B,r.S); r.カウント=`${r.B}-${r.S}`;
   r.sw=SWING.includes(r.結果)?1:0; r.miss=r.結果==="空振り"?1:0; r.con=(r.結果==="ファウル"||r.結果==="インプレー")?1:0;
   r.st=STRIKE.includes(r.結果)?1:0; r.ip=r.結果==="インプレー"?1:0;
   const z=Number(r.投球ゾーン); r.inz=(z>=1&&z<=9)?1:0; r.hasZ=r.投球ゾーン?1:0;
@@ -591,6 +600,11 @@ function fillSel(id,vals,allLabel,cur){
   const el=$(id); el.innerHTML=`<option value="">${esc(allLabel)}</option>`+vals.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join("");
   el.value=vals.includes(cur)?cur:"";
 }
+function fillSelGroups(id,groups,allLabel,cur){
+  const el=$(id); const all=groups.flatMap(g=>g.vals);
+  el.innerHTML=`<option value="">${esc(allLabel)}</option>`+groups.map(g=>`<optgroup label="${esc(g.label)}">${g.vals.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join("")}</optgroup>`).join("");
+  el.value=all.includes(cur)?cur:"";
+}
 function buildPlayerOptions(){
   const el=$("#f-sel");
   const isBat=MODE==="bat";
@@ -643,8 +657,8 @@ function buildFilterOptions(){
   fillSel("#f-opp",src.teams,"すべて",F.opp);
   fillSel("#f-type",src.types,"すべて",F.type);
   fillSel("#f-band",BANDS.concat(["未入力"]),"すべて",F.band);
-  fillSel("#f-run",RUNS,"すべて",F.run);
-  fillSel("#f-cnt",CNTS,"すべて",F.cnt);
+  fillSelGroups("#f-run",[{label:"まとめ",vals:RUNS.concat(["走者あり"])},{label:"個別（全8パターン）",vals:RUNS8}],"すべて",F.run);
+  fillSelGroups("#f-cnt",[{label:"まとめ",vals:CNTS.concat(["追い込まれ","ボール先行","ストライク先行","平行カウント"])},{label:"個別（全12カウント B-S）",vals:CNT12}],"すべて",F.cnt);
   fillSel("#f-hand",["右","左"],"両方",F.hand);
   $("#f-tb").value=F.tb;
   $("#f-from").value=F.from; $("#f-to").value=F.to;
@@ -663,8 +677,8 @@ function subject(){
   rows=rows.filter(r=>
     (!F.from||r.日付>=F.from)&&(!F.to||r.日付<=F.to)&&
     (!F.tour||r.大会===F.tour)&&(!F.gkind||r.試合種別===F.gkind)&&(!F.opp||opp(r)===F.opp)&&
-    (!F.type||r.球種===F.type)&&(!F.band||r.球速帯===F.band)&&(!F.run||r.走者区分===F.run)&&
-    (!F.cnt||r.カウント区分===F.cnt)&&(!F.hand||hand(r)===F.hand)&&
+    (!F.type||r.球種===F.type)&&(!F.band||r.球速帯===F.band)&&runMatch(r,F.run)&&
+    cntMatch(r,F.cnt)&&(!F.hand||hand(r)===F.hand)&&
     (F.tb===""||(F.tb==="no"&&!r.tbf)||(F.tb==="only"&&r.tbf)));
   return {rows,label};
 }
@@ -884,12 +898,15 @@ function renderBat(rows,a,label){
     {k:"n",label:"球数",val:x=>x.n,fmt:fInt,bar:true},{k:"sw",label:"スイング率",val:S.swing,fmt:fPct},{k:"wh",label:"空振り率",val:S.whiff,fmt:fPct},
     {k:"ab",label:"打数",val:x=>x.ab,fmt:fInt},{k:"h",label:"安打",val:x=>x.h,fmt:fInt},{k:"avg",label:"打率",val:S.avg,fmt:fAvg},{k:"slg",label:"長打率",val:S.slg,fmt:fAvg},{k:"so",label:"三振",val:x=>x.so,fmt:fInt}];
   const byType=groupBy(rows,r=>r.球種), byBand=groupBy(rows,r=>r.球速帯), byRun=groupBy(rows,r=>r.走者区分), byCnt=groupBy(rows,r=>r.カウント区分);
+  const byRun8=groupBy(rows,r=>r.走者詳細), byCnt12=groupBy(rows,r=>r.カウント);
   const byPit=groupBy(rows,r=>`${r.投手}（${r.守備}）`), byGame=groupBy(rows,r=>`${r.日付} vs ${r.守備}`);
   const byHand=groupBy(rows,r=>(r.投手左右||"?")+"投手");
   const tables=`
     <div class="card"><h3>球種別 <span class="sub">打率はその球種で打席が決着したもの</span></h3>${table(colsB,rowsFromGroups(byType).sort((x,y)=>y.a.n-x.a.n),{total:a})}</div>
     <div class="card"><h3>球速帯別</h3>${table(colsB,rowsFromGroups(byBand,BANDS.concat(["未入力"])),{total:a})}</div>
-    <div class="card"><h3>走者状況別・カウント別・対左右投手</h3>${table(colsB,rowsFromGroups(byRun,RUNS).concat(rowsFromGroups(byCnt,CNTS)).concat(rowsFromGroups(byHand)),{})}</div>
+    <div class="card"><h3>対左右投手・まとめ区分</h3>${table(colsB,rowsFromGroups(byHand).concat(rowsFromGroups(byRun,RUNS)).concat(rowsFromGroups(byCnt,CNTS)),{})}</div>
+    <div class="card"><h3>走者状況別 <span class="sub">全8パターン</span></h3>${table(colsB,rowsAll(byRun8,RUNS8),{total:a})}</div>
+    <div class="card"><h3>カウント別 <span class="sub">全12カウント（B-S、投球前）</span></h3>${table(colsB,rowsAll(byCnt12,CNT12),{total:a})}</div>
     <div class="card"><h3>対戦投手別</h3>${table(colsB,rowsFromGroups(byPit).sort((x,y)=>y.a.n-x.a.n),{})}</div>
     <div class="card" style="grid-column:1/-1"><h3>試合別</h3>${table(colsB,rowsFromGroups(byGame).sort((x,y)=>x.label.localeCompare(y.label)),{})}</div>`;
   $("#body").innerHTML=`<div class="grid g2">${zoneCard}${sprayCard}</div><div class="grid g2">${tables}</div>`;
@@ -947,6 +964,7 @@ function renderPit(rows,a,label){
     {k:"n",label:"球数",val:x=>x.n,fmt:fInt,bar:true},{k:"pct",label:"割合",val:x=>x.n/a.n,fmt:fPct},{k:"v",label:"平均球速",val:S.vavg,fmt:fNum},{k:"vm",label:"最高",val:S.vmax,fmt:fNum},
     {k:"st",label:"ストライク率",val:S.strike,fmt:fPct},{k:"wh",label:"空振り率",val:S.whiff,fmt:fPct},{k:"ab",label:"打数",val:x=>x.ab,fmt:fInt},{k:"h",label:"被安打",val:x=>x.h,fmt:fInt},{k:"avg",label:"被打率",val:S.avg,fmt:fAvg}];
   const byType=groupBy(rows,r=>r.球種), byHand=groupBy(rows,r=>(r.左右||"?")+"打者"), byRun=groupBy(rows,r=>r.走者区分), byCnt=groupBy(rows,r=>r.カウント区分);
+  const byRun8=groupBy(rows,r=>r.走者詳細), byCnt12=groupBy(rows,r=>r.カウント);
   const byInn=groupBy(rows,r=>r.回?`${r.回}回`:""), byBat=groupBy(rows,r=>`${r.打者}（${r.攻撃}）`), byGame=groupBy(rows,r=>`${r.日付} vs ${r.攻撃}`);
   // 球数ごとの球速（試合内の通算球数を15球ごとに）
   const perGame=new Map(); rows.forEach(r=>{ const k=r.試合ID; if(!perGame.has(k)) perGame.set(k,[]); perGame.get(k).push(r); });
@@ -966,7 +984,9 @@ function renderPit(rows,a,label){
   const tables=`
     <div class="card"><h3>球種別</h3>${table(colsP,rowsFromGroups(byType).sort((x,y)=>y.a.n-x.a.n),{total:a})}</div>
     ${ctlCard}
-    <div class="card"><h3>対左右打者・走者状況・カウント別</h3>${table(colsP,rowsFromGroups(byHand).concat(rowsFromGroups(byRun,RUNS)).concat(rowsFromGroups(byCnt,CNTS)),{})}</div>
+    <div class="card"><h3>対左右打者・まとめ区分</h3>${table(colsP,rowsFromGroups(byHand).concat(rowsFromGroups(byRun,RUNS)).concat(rowsFromGroups(byCnt,CNTS)),{})}</div>
+    <div class="card"><h3>走者状況別 <span class="sub">全8パターン</span></h3>${table(colsP,rowsAll(byRun8,RUNS8),{total:a})}</div>
+    <div class="card"><h3>カウント別 <span class="sub">全12カウント（B-S、投球前）</span></h3>${table(colsP,rowsAll(byCnt12,CNT12),{total:a})}</div>
     <div class="card"><h3>イニング別</h3>${table(colsP,rowsFromGroups(byInn,innOrder),{})}</div>
     <div class="card"><h3>対戦打者別 <span class="sub">球数順</span></h3>${table(colsP,rowsFromGroups(byBat).sort((x,y)=>y.a.n-x.a.n).slice(0,20),{})}</div>
     <div class="card" style="grid-column:1/-1"><h3>試合別</h3>${table(colsP,rowsFromGroups(byGame).sort((x,y)=>x.label.localeCompare(y.label)),{})}</div>`;
@@ -1011,6 +1031,7 @@ function init(){
   if(!ROWS.length){ ROWS=makeSample(); SRC="sample"; }
   init(); showConn();
 })();
+if("serviceWorker" in navigator&&location.protocol.startsWith("http")){ navigator.serviceWorker.register("./sw.js").catch(()=>{}); }
 })();
 </script>
 
