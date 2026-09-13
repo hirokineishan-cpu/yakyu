@@ -131,14 +131,15 @@ svg.field{width:100%; max-width:520px; height:auto; display:block; margin:0 auto
 .sw.hit{background:var(--hit)} .sw.out{background:var(--out)} .sw.foul{background:none; border:2px solid var(--out)}
 
 /* tables */
-.tbl-wrap{overflow-x:auto}
+/* 表：横スクロールは使わず、収まらないときは表全体の文字を小さくして必ず全列を見せる（fitTables） */
+.tbl-wrap{overflow:visible}
 table.t{width:100%; border-collapse:collapse; font-size:13px}
-table.t th{font-size:10px; letter-spacing:.1em; color:var(--muted); text-align:right; padding:5px 7px; border-bottom:1px solid var(--line); white-space:nowrap; font-weight:700}
+table.t th{font-size:.77em; letter-spacing:.04em; color:var(--muted); text-align:right; padding:.4em .5em; border-bottom:1px solid var(--line); white-space:nowrap; font-weight:700}
 table.t th:first-child, table.t td:first-child{text-align:left}
-table.t td{padding:6px 7px; border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent); text-align:right; font-family:var(--num); font-size:14px; font-variant-numeric:tabular-nums; white-space:nowrap}
-table.t td:first-child{font-family:var(--jp); font-size:13px}
+table.t td{padding:.45em .5em; border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent); text-align:right; font-family:var(--num); font-size:1.08em; font-variant-numeric:tabular-nums; white-space:nowrap}
+table.t td:first-child{font-family:var(--jp); font-size:1em}
 table.t tr.tot td{border-top:1.5px solid var(--line); font-weight:700}
-table.t td .barcell{display:inline-block; height:8px; background:var(--bar); border-radius:3px; vertical-align:middle; margin-right:6px; opacity:.75}
+table.t td .barcell{display:inline-block; height:.55em; background:var(--bar); border-radius:3px; vertical-align:middle; margin-right:.4em; opacity:.75}
 .muted{color:var(--muted)}
 .empty{color:var(--muted); font-size:13px; padding:18px 0; text-align:center}
 
@@ -181,24 +182,36 @@ textarea{width:100%; min-height:200px; font-family:ui-monospace,Menlo,monospace;
 .msel .mfoot{display:flex; gap:6px; justify-content:space-between; padding:6px 4px 2px; border-top:1px solid var(--line); margin-top:4px}
 /* 印刷（PDF保存） */
 #print-head{display:none}
+/* html.prt は印刷の直前に JS が付ける（用紙幅で表の縮小率を測るため）。@media print は保険 */
+@page{size:A4; margin:11mm}
+html.prt, html.prt[data-theme="dark"]{ color-scheme:light;
+  --ink:#152029; --ink2:#3d4b54; --muted:#6d7c82; --paper:#ffffff; --ground:#ffffff; --raise:#f3f7f3; --line:#c9d3cd;
+  --grass:#2e6b4a; --grassDeep:#1f4e36; --claySoft:#e6cdc0; --clay:#b4552f; --accent:#2e6b4a; --accentInk:#ffffff;
+  --hit:#1e8a4c; --out:#8d9aa0; --foul:#a8790c; --heat0:#fbf1ea; --heat1:#e9a67f; --heat2:#b4552f; --heat3:#5e2812; --bar:#2b6699; --shadow:none }
+html.prt body{background:#fff; color:#152029; font-size:12px}
+html.prt .wrap{width:710px; max-width:none; padding:0; margin:0}   /* A4 210mm − 余白22mm ≒ 710px */
+html.prt .hd,html.prt .filters,html.prt .tip,html.prt .ov,html.prt .toast{display:none!important}
+html.prt #print-head{display:block; border-bottom:2px solid #2e6b4a; padding-bottom:6px; margin-bottom:8px}
+html.prt #print-head .t{font-size:18px; font-weight:900}
+html.prt #print-head .s{font-size:11px; color:#555; margin-top:2px}
+html.prt .kpis{grid-template-columns:repeat(6,1fr); gap:5px; margin-top:6px}
+html.prt .kpi{box-shadow:none; padding:5px 7px} html.prt .kpi .v{font-size:19px}
+html.prt .grid{gap:8px; margin-top:8px}
+html.prt .g3{grid-template-columns:repeat(3,minmax(0,1fr))} html.prt .g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+html.prt .card{box-shadow:none; break-inside:avoid; page-break-inside:avoid; padding:8px 10px}
+html.prt .card.tc{grid-column:1/-1}   /* 表のカードは用紙の幅いっぱいに（全列が読める大きさで） */
+html.prt .card h3 select{display:none}
+html.prt .card.pb{break-before:page; page-break-before:always}
+html.prt svg.zone{max-width:260px} html.prt svg.field{max-width:330px}
+html.prt table.t{font-size:12px}
+html.prt .barcell{display:none!important}
 @media print{
-  @page{size:A4; margin:11mm}
-  body{background:#fff; color:#152029; font-size:12px}
+  body{background:#fff; color:#152029}
   .wrap{max-width:none; padding:0}
   .hd,.filters,.tip,.ov,.toast{display:none!important}
-  #print-head{display:block; border-bottom:2px solid #2e6b4a; padding-bottom:6px; margin-bottom:8px}
-  #print-head .t{font-size:18px; font-weight:900}
-  #print-head .s{font-size:11px; color:#555; margin-top:2px}
-  .kpis{grid-template-columns:repeat(6,1fr); gap:5px; margin-top:6px}
-  .kpi{box-shadow:none; padding:5px 7px} .kpi .v{font-size:19px}
-  .grid{gap:8px; margin-top:8px}
-  .g3{grid-template-columns:repeat(3,minmax(0,1fr))} .g2{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .card{box-shadow:none; break-inside:avoid; page-break-inside:avoid; padding:8px 10px}
-  .card h3 select{display:none}
+  #print-head{display:block}
+  .card{box-shadow:none; break-inside:avoid; page-break-inside:avoid}
   .card.pb{break-before:page; page-break-before:always}
-  svg.zone{max-width:260px} svg.field{max-width:330px}
-  table.t td,table.t th{padding:3px 5px} table.t td{font-size:12px}
-  .tbl-wrap{overflow:visible}
   .barcell{display:none!important}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
@@ -207,7 +220,7 @@ textarea{width:100%; min-height:200px; font-family:ui-monospace,Menlo,monospace;
 <div class="wrap">
   <div class="hd">
     <div>
-      <div class="ttl">配球アナライザー <span style="font-size:11px; font-weight:400; opacity:.6">v7</span></div>
+      <div class="ttl">配球アナライザー <span style="font-size:11px; font-weight:400; opacity:.6">v8</span></div>
       <div class="st" id="src-st">—</div>
     </div>
     <select id="f-year" class="chip" style="display:none; padding:5px 10px"></select>
@@ -871,8 +884,9 @@ function table(cols,rows,opt){
   const th=cols.map(c=>`<th>${esc(c.label)}</th>`).join("");
   const maxBar={};
   cols.forEach(c=>{ if(c.bar) maxBar[c.k]=Math.max(...rows.map(r=>c.val(r.a)||0),0.0001); });
-  const tr=rows.map(r=>`<tr>${cols.map((c,i)=>{ const v=c.val(r.a); const bar=c.bar?`<span class="barcell" style="width:${Math.round(60*(v||0)/maxBar[c.k])}px"></span>`:"";
+  const tr=rows.map(r=>`<tr>${cols.map((c,i)=>{ const v=c.val(r.a); const bar=c.bar?`<span class="barcell" style="width:${(4*(v||0)/maxBar[c.k]).toFixed(2)}em"></span>`:"";
     return `<td>${i===0?esc(r.label):bar+esc(c.fmt(v))}</td>`; }).join("")}</tr>`).join("");
+  // barcell の幅は em（表の文字を縮めたとき一緒に縮む）
   const tot=opt&&opt.total?`<tr class="tot">${cols.map((c,i)=>`<td>${i===0?"合計":esc(c.fmt(c.val(opt.total)))}</td>`).join("")}</tr>`:"";
   return `<div class="tbl-wrap"><table class="t"><thead><tr>${th}</tr></thead><tbody>${tr||`<tr><td colspan="${cols.length}" class="muted">データなし</td></tr>`}${tot}</tbody></table></div>`;
 }
@@ -915,7 +929,28 @@ function render(){
   if(!rows.length){ $("#kpis").innerHTML=""; $("#body").innerHTML=`<div class="card"><div class="empty">条件に合う記録がありません。条件をゆるめてください。</div></div>`; return; }
   if(MODE==="bat") renderBat(rows,a,label); else renderPit(rows,a,label);
   bindTips(document.body);
+  fitTables();
 }
+/* 表を枠内に収める：はみ出す表は文字サイズを比例で縮める（横スクロールは出さない） */
+function fitTables(){
+  $$("#body .tbl-wrap").forEach(w=>{
+    const t=$("table",w); if(!t) return;
+    t.style.fontSize="";
+    for(let i=0;i<3;i++){
+      const avail=w.clientWidth, need=t.scrollWidth;
+      if(!avail||need<=avail+0.5) break;
+      const cur=parseFloat(getComputedStyle(t).fontSize);
+      t.style.fontSize=Math.max(6.5,Math.floor(cur*avail/need*0.985*10)/10)+"px";
+    }
+  });
+}
+let rzT; window.addEventListener("resize",()=>{ clearTimeout(rzT); rzT=setTimeout(fitTables,120); });
+/* 印刷：用紙幅のレイアウト（html.prt）に切り替えてから表を測り直す */
+function printOn(){ document.documentElement.classList.add("prt"); fitTables(); }
+function printOff(){ if(!document.documentElement.classList.contains("prt")) return; document.documentElement.classList.remove("prt"); fitTables(); setTimeout(fitTables,150); }
+window.addEventListener("beforeprint",printOn);
+window.addEventListener("afterprint",printOff);
+try{ window.matchMedia("print").addEventListener("change",e=>{ if(e.matches) printOn(); else printOff(); }); }catch(e){}
 
 function renderBat(rows,a,label){
   const k=$("#kpis");
@@ -961,13 +996,13 @@ function renderBat(rows,a,label){
   const byPit=groupBy(rows,r=>`${r.投手}（${r.守備}）`), byGame=groupBy(rows,r=>`${r.日付} vs ${r.守備}`);
   const byHand=groupBy(rows,r=>(r.投手左右||"?")+"投手");
   const tables=`
-    <div class="card"><h3>球種別 <span class="sub">打率はその球種で打席が決着したもの</span></h3>${table(colsB,rowsFromGroups(byType).sort((x,y)=>y.a.n-x.a.n),{total:a})}</div>
-    <div class="card"><h3>球速帯別</h3>${table(colsB,rowsFromGroups(byBand,BANDS.concat(["未入力"])),{total:a})}</div>
-    <div class="card"><h3>対左右投手・まとめ区分</h3>${table(colsB,rowsFromGroups(byHand).concat(rowsFromGroups(byRun,RUNS)).concat(rowsFromGroups(byCnt,CNTS)),{})}</div>
-    <div class="card"><h3>走者状況別 <span class="sub">全8パターン</span></h3>${table(colsB,rowsAll(byRun8,RUNS8),{total:a})}</div>
-    <div class="card"><h3>カウント別 <span class="sub">全12カウント（B-S、投球前）</span></h3>${table(colsB,rowsAll(byCnt12,CNT12),{total:a})}</div>
-    <div class="card"><h3>対戦投手別</h3>${table(colsB,rowsFromGroups(byPit).sort((x,y)=>y.a.n-x.a.n),{})}</div>
-    <div class="card" style="grid-column:1/-1"><h3>試合別</h3>${table(colsB,rowsFromGroups(byGame).sort((x,y)=>x.label.localeCompare(y.label)),{})}</div>`;
+    <div class="card tc"><h3>球種別 <span class="sub">打率はその球種で打席が決着したもの</span></h3>${table(colsB,rowsFromGroups(byType).sort((x,y)=>y.a.n-x.a.n),{total:a})}</div>
+    <div class="card tc"><h3>球速帯別</h3>${table(colsB,rowsFromGroups(byBand,BANDS.concat(["未入力"])),{total:a})}</div>
+    <div class="card tc"><h3>対左右投手・まとめ区分</h3>${table(colsB,rowsFromGroups(byHand).concat(rowsFromGroups(byRun,RUNS)).concat(rowsFromGroups(byCnt,CNTS)),{})}</div>
+    <div class="card tc"><h3>走者状況別 <span class="sub">全8パターン</span></h3>${table(colsB,rowsAll(byRun8,RUNS8),{total:a})}</div>
+    <div class="card tc"><h3>カウント別 <span class="sub">全12カウント（B-S、投球前）</span></h3>${table(colsB,rowsAll(byCnt12,CNT12),{total:a})}</div>
+    <div class="card tc"><h3>対戦投手別</h3>${table(colsB,rowsFromGroups(byPit).sort((x,y)=>y.a.n-x.a.n),{})}</div>
+    <div class="card tc" style="grid-column:1/-1"><h3>試合別</h3>${table(colsB,rowsFromGroups(byGame).sort((x,y)=>x.label.localeCompare(y.label)),{})}</div>`;
   $("#body").innerHTML=`<div class="grid g2">${zoneCard}${sprayCard}</div><div class="grid g2">${tables}</div>`;
   $("#hm-bat").addEventListener("change",e=>{ heatMetricBat=e.target.value; render(); });
   $("#sp-foul").addEventListener("change",e=>{ showFoul=e.target.checked; render(); });
@@ -1031,7 +1066,7 @@ function renderPit(rows,a,label){
     const trows=rows.filter(r=>r.攻撃===tm); const ta=sum(trows);
     const byBat=groupBy(trows,r=>`${r.打者背番号?"#"+r.打者背番号+" ":""}${r.打者}${r.左右?"（"+r.左右+"）":""}`);
     const colsT=colsP.map(c=>c.k==="pct"?Object.assign({},c,{val:x=>x.n/ta.n}):c);
-    return `<div class="card pb" style="grid-column:1/-1"><h3>対戦打者別　${esc(tm)} <span class="sub">${uniq(trows.map(r=>r.試合ID)).length}試合・${ta.n}球・球数順</span></h3>${table(colsT,rowsFromGroups(byBat).sort((x,y)=>y.a.n-x.a.n),{total:ta})}</div>`;
+    return `<div class="card tc pb" style="grid-column:1/-1"><h3>対戦打者別　${esc(tm)} <span class="sub">${uniq(trows.map(r=>r.試合ID)).length}試合・${ta.n}球・球数順</span></h3>${table(colsT,rowsFromGroups(byBat).sort((x,y)=>y.a.n-x.a.n),{total:ta})}</div>`;
   }).join("");
   // 球数ごとの球速（試合内の通算球数を15球ごとに）
   const perGame=new Map(); rows.forEach(r=>{ const k=r.試合ID; if(!perGame.has(k)) perGame.set(k,[]); perGame.get(k).push(r); });
@@ -1047,15 +1082,15 @@ function renderPit(rows,a,label){
   const byTypeCtl=new Map();
   gs.pts.forEach(r=>{ const k=r.球種; if(!byTypeCtl.has(k)) byTypeCtl.set(k,{n:0,sx:0,sy:0,same:0,g:0,st:0}); const o=byTypeCtl.get(k); o.n++; o.sx+=r.投球X-r.構えX; o.sy+=r.投球Y-r.構えY; o.same+=r.投球ゾーン===r.構えゾーン?1:0; o.g+=r.gap; o.st+=r.st; });
   const ctlRowsT=Array.from(byTypeCtl.entries()).sort((x,y)=>y[1].n-x[1].n).map(([k,o])=>({label:k,a:o}));
-  const ctlCard=`<div class="card"><h3>制球の内訳 <span class="sub">球種別・構えゾーン別</span></h3>${table(ctlCols,ctlRowsT.concat(ctlRowsZ),{})}</div>`;
+  const ctlCard=`<div class="card tc"><h3>制球の内訳 <span class="sub">球種別・構えゾーン別</span></h3>${table(ctlCols,ctlRowsT.concat(ctlRowsZ),{})}</div>`;
   const tables=`
-    <div class="card"><h3>球種別</h3>${table(colsP,rowsFromGroups(byType).sort((x,y)=>y.a.n-x.a.n),{total:a})}</div>
+    <div class="card tc"><h3>球種別</h3>${table(colsP,rowsFromGroups(byType).sort((x,y)=>y.a.n-x.a.n),{total:a})}</div>
     ${ctlCard}
-    <div class="card"><h3>対左右打者・まとめ区分</h3>${table(colsP,rowsFromGroups(byHand).concat(rowsFromGroups(byRun,RUNS)).concat(rowsFromGroups(byCnt,CNTS)),{})}</div>
-    <div class="card"><h3>走者状況別 <span class="sub">全8パターン</span></h3>${table(colsP,rowsAll(byRun8,RUNS8),{total:a})}</div>
-    <div class="card"><h3>カウント別 <span class="sub">全12カウント（B-S、投球前）</span></h3>${table(colsP,rowsAll(byCnt12,CNT12),{total:a})}</div>
-    <div class="card"><h3>イニング別</h3>${table(colsP,rowsFromGroups(byInn,innOrder),{})}</div>
-    <div class="card" style="grid-column:1/-1"><h3>試合別</h3>${table(colsP,rowsFromGroups(byGame).sort((x,y)=>x.label.localeCompare(y.label)),{})}</div>
+    <div class="card tc"><h3>対左右打者・まとめ区分</h3>${table(colsP,rowsFromGroups(byHand).concat(rowsFromGroups(byRun,RUNS)).concat(rowsFromGroups(byCnt,CNTS)),{})}</div>
+    <div class="card tc"><h3>走者状況別 <span class="sub">全8パターン</span></h3>${table(colsP,rowsAll(byRun8,RUNS8),{total:a})}</div>
+    <div class="card tc"><h3>カウント別 <span class="sub">全12カウント（B-S、投球前）</span></h3>${table(colsP,rowsAll(byCnt12,CNT12),{total:a})}</div>
+    <div class="card tc"><h3>イニング別</h3>${table(colsP,rowsFromGroups(byInn,innOrder),{})}</div>
+    <div class="card tc" style="grid-column:1/-1"><h3>試合別</h3>${table(colsP,rowsFromGroups(byGame).sort((x,y)=>x.label.localeCompare(y.label)),{})}</div>
     ${batTeamCards}`;
   $("#body").innerHTML=`<div class="grid g3">${zoneCard}${gapCard}${sprayCard}</div><div class="grid g2"><div class="card" style="grid-column:1/-1">${staminaCard.replace('<div class="card">','').replace(/<\/div>$/,'')}</div>${tables}</div>`;
   $("#hm-pit").addEventListener("change",e=>{ heatMetricPit=e.target.value; render(); });
@@ -1081,7 +1116,10 @@ $("#c-pdf").addEventListener("click",()=>{
   const isIOS=/iPad|iPhone/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
   if(isIOS) toast("印刷画面で「プリンタ」を選ばずに、プレビューを2本指で広げる → 共有 → ファイルに保存 でPDFになります");
   else toast("送信先で「PDFに保存」を選んでください");
-  setTimeout(()=>window.print(),400);
+  setTimeout(()=>{ printOn(); setTimeout(()=>{ window.print();
+    // afterprint が来ないブラウザ向けの保険：画面に触れたら通常表示に戻す
+    ["pointerdown","keydown","focus"].forEach(ev=>window.addEventListener(ev,printOff,{once:true}));
+  },60); },400);
 });
 $("#c-load").addEventListener("click",()=>{ $("#ld-text").value=""; $("#ov-load").hidden=false; });
 $("#ld-close").addEventListener("click",()=>$("#ov-load").hidden=true);
