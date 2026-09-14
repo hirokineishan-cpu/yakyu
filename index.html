@@ -58,6 +58,9 @@ button{font:inherit; color:inherit; font-family:var(--jp); cursor:pointer; touch
 .num{font-family:var(--num); font-variant-numeric:tabular-nums}
 .app{height:var(--appH,100dvh); max-height:var(--appH,100dvh); overflow:hidden; display:flex; flex-direction:column; padding:6px; gap:6px; max-width:1500px; margin:0 auto}
 .app[hidden]{display:none}
+.brow{display:contents}
+.ph-only{display:none!important}
+#pa-back{display:none}
 
 /* board */
 .board{display:flex; align-items:stretch; gap:6px; flex-wrap:nowrap; overflow-x:auto; flex:0 0 auto;
@@ -288,12 +291,154 @@ table.ros td{padding:2px 4px; border-top:1px solid var(--line)}
   .zone-panel{grid-row:2; grid-column:1}
   .right-panel{grid-row:2; grid-column:2}
 }
-@media (max-width:680px){
-  .app{height:auto; max-height:none; overflow:visible; min-height:100dvh}
-  .main{grid-template-columns:1fr; grid-template-rows:none}
-  .pa-panel,.zone-panel,.right-panel{grid-column:1; grid-row:auto}
-  svg.zone{width:100%!important; height:auto!important}
-  .gcard{grid-template-columns:1fr auto}
+/* ===== スマホ：記録画面を1画面に収める（縦スクロールなし） ===== */
+@media (max-width:680px), (max-height:520px){
+  .app{height:var(--appH,100dvh); max-height:var(--appH,100dvh); overflow:hidden; padding:3px; gap:3px}
+  .ph-only{display:inline-flex!important}
+  .pc-only{display:none!important}
+  /* スコアボード：1段目＝状況（横スクロール可）／2段目＝操作 */
+  .board{flex-wrap:wrap; overflow:visible; padding:3px 4px; gap:0}
+  .brow{display:flex; width:100%; align-items:stretch; overflow-x:auto; scrollbar-width:none}
+  .brow::-webkit-scrollbar{display:none}
+  .board .lbl{display:none}
+  .cell{padding:1px 4px; gap:1px}
+  .cell:first-child{padding-left:2px}
+  .big-n{font-size:21px}
+  .inn-main .unit{font-size:10px}
+  .ha{font-size:10.5px; padding:0 4px; margin-left:2px}
+  .tbbtn{padding:1px 4px; font-size:9px; border-radius:5px}
+  .sub{font-size:9.5px; max-width:8.6em; overflow:hidden; text-overflow:ellipsis}
+  .srow{gap:3px; font-size:10px}
+  .srow .tm{display:none}
+  .srow .sc{font-size:15px}
+  .srow .mk{font-size:7px; width:.6em}
+  #sb-diff{display:none}
+  .cnt{gap:3px}
+  .cnum{font-size:19px}
+  .dot{width:8px; height:8px; border-width:1.5px}
+  .dcol{gap:2px}
+  .dk{font-size:8px; width:.9em}
+  #diamond{width:40px; height:31px}
+  .knbtn{padding:4px 5px; font-size:10px}
+  .acts{width:100%; margin-left:0; gap:4px; padding-top:3px; margin-top:2px; justify-content:flex-start;
+    border-top:1px solid rgba(255,255,255,.14); overflow-x:auto; scrollbar-width:none}
+  .acts::-webkit-scrollbar{display:none}
+  .acts .chip{padding:4px 9px; font-size:11px}
+  /* 本体：左＝ゾーン＋球種・球速／右＝結果ボタン（縦に大きく） */
+  .main{grid-template-columns:minmax(0,1fr) 108px; grid-template-rows:minmax(0,1fr) auto auto auto; gap:3px}
+  .zone-panel{grid-row:1; grid-column:1}
+  .right-panel,.right-panel>.pbd{display:contents}
+  .right-panel>.phd{display:none}
+  .rs-types{grid-column:1; grid-row:2}
+  .rs-velo{grid-column:1; grid-row:3}
+  .rs-mid{grid-column:1; grid-row:4; min-height:0}
+  .rs-res{grid-column:2; grid-row:1/-1; display:flex; flex-direction:column; gap:4px; min-height:0}
+  .rs-res .gb{margin-bottom:0!important; grid-template-columns:1fr; gap:4px}
+  .rs-res .gb.g3{flex:3 1 0}
+  .rs-res .gb.g2{flex:2 1 0}
+  .rs-res .gb.g2:last-child{flex:0 0 auto}
+  .rs-res .gb.g2:last-child .btn{padding:7px 2px; font-size:11px}
+  .rs-res .btn.big{padding:2px; font-size:13.5px; display:flex; align-items:center; justify-content:center}
+  .phd{padding:3px 6px}
+  .pbd{padding:4px}
+  .vsbar{padding:3px 5px; gap:4px; row-gap:3px; flex-wrap:wrap; overflow:visible}
+  .vsbar .arrow{display:none}
+  .pcard{padding:2px 4px; gap:3px; flex:1 1 auto; min-width:0}
+  .pcard b{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .pcard b{font-size:12.5px}
+  .pcard .no{font-size:14px}
+  .pcard .sm{display:none}
+  .ptag{font-size:9px; padding:1px 4px}
+  .nolbl{display:none}
+  .swap{padding:2px 5px; font-size:10px}
+  #c-zclear{padding:2px 5px; font-size:9.5px; flex:0 0 auto}
+  .zw{gap:3px}
+  .steps{gap:4px; max-width:none}
+  .step{padding:2px 4px; border-radius:6px}
+  .step-k{font-size:9px}
+  .step-v{font-size:11.5px}
+  svg.zone{width:100%; height:100%; min-height:0}
+  .z-num{font-size:13px}
+  .z-side{font-size:9.5px}
+  /* 球種・球速・結果 */
+  .right-panel .pbd{gap:4px; overflow:hidden}
+  .right-panel .sec{display:none}
+  #types{display:grid; grid-template-columns:repeat(auto-fill,minmax(84px,1fr)); gap:3px}
+  #types .btn{padding:5px 1px; font-size:11px; border-radius:6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .vbar{gap:4px}
+  .velo{padding:2px 6px}
+  .velo .vn{font-size:19px}
+  .velo .vu{font-size:9.5px}
+  .pre{padding:0 7px; font-size:10px}
+  #cur-log{display:flex; gap:4px; overflow-x:auto; overflow-y:hidden; scrollbar-width:none}
+  #cur-log::-webkit-scrollbar{display:none}
+  #cur-log .clog{display:inline-flex; width:auto; flex:0 0 auto; gap:5px; border:1px solid var(--line);
+    border-radius:6px; padding:3px 7px; font-size:11px}
+  .clog-empty{padding:3px 2px}
+  #pad{grid-template-columns:repeat(6,1fr); gap:4px}
+  #pad .btn{font-size:16px; padding:6px 0}
+  .btn.big{padding:9px 2px; font-size:13.5px}
+  .gb.g2,.gb.g3{gap:4px}
+  .btn{padding:6px 2px; font-size:12px}
+  /* 打席一覧は下から出るシート */
+  .pa-panel{display:none}
+  #app.pa-open .pa-panel{display:flex; position:fixed; left:6px; right:6px; bottom:6px; top:auto;
+    max-height:min(56vh,360px); z-index:46; box-shadow:0 -6px 30px rgba(0,0,0,.35)}
+  #app.pa-open #pa-back{display:block; position:fixed; inset:0; background:rgba(12,20,18,.5); z-index:45}
+  .pa-list{flex-direction:column}
+  .pa{width:100%; grid-template-columns:auto 1fr auto}
+  .pa .rs{grid-column:auto}
+  .pa-list .inn-h{position:sticky; display:block; padding:6px 2px 2px}
+  /* ホーム */
+  .home{padding:10px}
+  .htitle{font-size:18px}
+  .hhd{margin-bottom:10px; gap:8px}
+  .hhd .ghost,.hhd .primary{padding:7px 11px; font-size:12.5px}
+  .gcard{grid-template-columns:1fr auto; padding:8px 10px}
+  .sheet{max-height:calc(var(--appH,100dvh) - 12px)}
+  .ov{padding:6px}
+  .sbd{padding:9px}
+  .shd{padding:7px 10px; flex-wrap:wrap; row-gap:4px}
+  .shd .sttl{flex:0 0 auto; white-space:nowrap}
+  .shd .hint{order:9; width:100%}
+  .sft{padding:7px 10px}
+  .primary,.ghost,.danger{padding:9px 13px; font-size:13.5px}
+  svg.field{max-height:32vh}
+  .sgrid{grid-template-columns:1fr 1fr; gap:7px}
+  .ov .sec{font-size:9.5px; margin-bottom:3px}
+  #hit-kinds .btn,#hit-results .btn,#pae-pares .btn{padding:6px 2px; font-size:11.5px}
+  .ov .read{padding:5px 7px; font-size:11px}
+  .ov .two{gap:8px}
+  .ov .hint{font-size:11px}
+  .sec{white-space:nowrap}
+  #tm-q{min-width:6em!important}
+  .sttl{font-size:14px}
+  .prow{padding:5px 7px}
+  .tlist{grid-template-columns:1fr 1fr; gap:5px}
+  .tcard{padding:7px 8px}
+  .tcard b{font-size:12.5px}
+}
+@media (max-width:680px) and (min-height:740px){
+  .btn.big{padding:12px 2px}
+}
+/* スマホ横向き：ゾーンを左、球種〜結果を右にまとめる */
+@media (max-height:520px) and (orientation:landscape){
+  .board{flex-wrap:nowrap}
+  .brow{width:auto; flex:1 1 auto}
+  .acts{width:auto; flex:0 0 auto; margin-left:auto; margin-top:0; padding-top:0; border-top:0}
+  .main{grid-template-columns:minmax(0,1fr) minmax(0,46%); grid-template-rows:auto auto auto minmax(0,1fr); gap:3px}
+  .zone-panel{grid-column:1; grid-row:1/-1}
+  .rs-types{grid-column:2; grid-row:1}
+  .rs-velo{grid-column:2; grid-row:2}
+  .rs-mid{grid-column:2; grid-row:3}
+  .rs-res{grid-column:2; grid-row:4; justify-content:flex-end}
+  .rs-res .gb{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .rs-res .gb.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .rs-res .gb.g3{flex:0 0 auto}
+  .rs-res .gb.g2{flex:0 0 auto}
+  .rs-res .btn.big{padding:9px 2px}
+  .vsbar{flex-wrap:nowrap; overflow-x:auto}
+  .pcard{flex:0 1 auto}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
@@ -320,7 +465,8 @@ table.ros td{padding:2px 4px; border-top:1px solid var(--line)}
   </div>
   <div class="read" id="h-sync" style="margin-bottom:14px; justify-content:space-between">
     <span id="h-sync-t" class="hint">未接続</span>
-    <span style="display:flex; gap:6px; align-items:center"><span class="hint" id="h-ver" style="opacity:.6">v18</span>
+    <span class="hint" id="h-master" style="width:100%; order:3"></span>
+    <span style="display:flex; gap:6px; align-items:center"><span class="hint" id="h-ver" style="opacity:.6">v19</span>
       <button class="mini" id="h-flush">今すぐ同期</button>
       <button class="mini" id="h-logout">ログアウト</button>
       <button class="mini" id="h-conn">接続設定</button>
@@ -337,6 +483,7 @@ table.ros td{padding:2px 4px; border-top:1px solid var(--line)}
 <!-- ======== 記録画面 ======== -->
 <div class="app" id="app" hidden>
   <div class="board">
+   <div class="brow">
     <div class="cell">
       <div class="lbl">INNING　タップで変更</div>
       <div class="inn-main">
@@ -373,20 +520,24 @@ table.ros td{padding:2px 4px; border-top:1px solid var(--line)}
       <button class="knbtn" id="c-kn">牽制</button>
       </div>
     </div>
+   </div>
     <div class="acts">
+      <button class="chip ph-only" id="c-pa">打席一覧</button>
       <button class="chip" id="c-run">＋1点</button>
       <button class="chip warn" id="c-undo">1球取消</button>
       <button class="chip" id="c-velo">球速入力</button>
-      <button class="chip" id="c-csv">CSV</button>
+      <button class="chip pc-only" id="c-csv">CSV</button>
       <button class="chip" id="c-sync" title="未送信の記録">同期</button>
       <span class="robadge" id="ro-badge" hidden>閲覧のみ</span>
       <button class="chip" id="c-home">試合一覧</button>
     </div>
   </div>
 
+  <div id="pa-back"></div>
   <div class="main">
     <div class="panel pa-panel">
-      <div class="phd"><span class="pttl">打席　タップで修正</span><span class="pttl num" id="pa-count"></span></div>
+      <div class="phd"><span class="pttl">打席　タップで修正</span><span class="pttl num" id="pa-count"></span>
+        <button class="mini ph-only" id="pa-close" style="margin-left:auto">閉じる</button></div>
       <div class="pbd"><div class="pa-list" id="pa-list"></div></div>
     </div>
 
@@ -419,19 +570,19 @@ table.ros td{padding:2px 4px; border-top:1px solid var(--line)}
     <div class="panel right-panel">
       <div class="phd"><span class="pttl">球種・球速・結果</span><button class="mini" id="c-types">球種編集</button></div>
       <div class="pbd">
-        <div><p class="sec">球種</p><div class="gb g3" id="types"></div></div>
-        <div><p class="sec">球速</p>
+        <div class="rs-types"><p class="sec">球種</p><div class="gb g3" id="types"></div></div>
+        <div class="rs-velo"><p class="sec">球速</p>
           <div class="vbar">
             <button class="velo" id="velo"><span class="vn" id="velo-n">—</span><span class="vu">km/h</span></button>
             <button class="pre" id="velo-pre">1を消す</button>
           </div>
         </div>
-        <div style="flex:1 1 auto; min-height:0; display:flex; flex-direction:column">
+        <div class="rs-mid" style="flex:1 1 auto; min-height:0; display:flex; flex-direction:column">
           <p class="sec" id="mid-t">この打席　タップで修正</p>
           <div id="cur-log" style="overflow:auto; min-height:0"></div>
           <div class="gb g3" id="pad" hidden></div>
         </div>
-        <div><p class="sec">結果</p>
+        <div class="rs-res"><p class="sec">結果</p>
           <div class="gb g3" style="margin-bottom:5px">
             <button class="btn big k-ball" data-res="ボール">ボール</button>
             <button class="btn big k-strike" data-res="見逃し">見逃し</button>
@@ -576,8 +727,9 @@ table.ros td{padding:2px 4px; border-top:1px solid var(--line)}
 <!-- 試合設定 -->
 <div class="ov" id="ov-game" hidden>
   <div class="sheet" style="max-width:720px">
-    <div class="shd"><span class="sttl" id="gm-ttl">新しい試合</span>
-      <button class="mini" style="margin-left:auto" id="gm-close">閉じる</button></div>
+    <div class="shd"><span class="sttl" id="gm-ttl">新しい試合</span><span class="hint" id="gm-note"></span>
+      <button class="mini" style="margin-left:auto" id="gm-sync">名簿を最新にする</button>
+      <button class="mini" id="gm-close">閉じる</button></div>
     <div class="sbd" style="display:flex; flex-direction:column; gap:12px">
       <div class="sgrid">
         <div><label class="flbl" for="gm-date">試合日</label><input type="text" id="gm-date" placeholder="2026-09-13"></div>
@@ -600,8 +752,9 @@ table.ros td{padding:2px 4px; border-top:1px solid var(--line)}
 <!-- チーム・名簿 -->
 <div class="ov" id="ov-team" hidden>
   <div class="sheet">
-    <div class="shd"><span class="sttl">チーム・名簿</span>
-      <button class="mini" style="margin-left:auto" id="tm-close">閉じる</button></div>
+    <div class="shd"><span class="sttl">チーム・名簿</span><span class="hint" id="tm-note"></span>
+      <button class="mini" style="margin-left:auto" id="tm-sync">最新にする</button>
+      <button class="mini" id="tm-close">閉じる</button></div>
     <div class="sbd" style="display:flex; flex-direction:column; gap:12px">
       <div>
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
@@ -807,8 +960,11 @@ function showHome(){
         <button class="mini" data-del="${g.id}">削除</button>
       </span></div>`;
   }).join("") : (gsAll.length?`<div class="empty">このチームの試合はありません（${gsAll.length}試合は他チーム）。「表示するチーム」を「すべて」にすると全部出ます。</div>`:`<div class="empty">まだ試合がありません。「新しい試合」から始めてください。</div>`);
+  masterNote("#h-master",masterLabel());
   save(); if(typeof SYNC!=="undefined") SYNC.renderStatus();
+  if(!homeRefreshing) refreshMaster(()=>{ homeRefreshing=true; try{ showHome(); }finally{ homeRefreshing=false; } },{note:"#h-master"});
 }
+let homeRefreshing=false;
 // チーム一覧（自チームを先頭、あとは名前順）
 function teamsSorted(){ return Object.values(DB.teams).sort((a,b)=>(b.mine?1:0)-(a.mine?1:0)||a.name.localeCompare(b.name,"ja")); }
 function fillTeamFilter(el,cur){
@@ -867,6 +1023,8 @@ function openGameSetup(){
   if(ts[0]) $("#gm-a").value=ts[0].tid;
   if(ts[1]) $("#gm-b").value=ts[1].tid;
   gmInfo(); $("#ov-game").hidden=false;
+  refreshMaster(()=>{ const a=$("#gm-a").value,b=$("#gm-b").value; fillTeamSelects();
+    if(a&&teamOf(a)) $("#gm-a").value=a; if(b&&teamOf(b)) $("#gm-b").value=b; gmInfo(); },{note:"#gm-note"});
 }
 function gmInfo(){
   const a=teamOf($("#gm-a").value), b=teamOf($("#gm-b").value);
@@ -887,6 +1045,8 @@ $("#gm-tour").addEventListener("change",e=>{
 });
 $("#h-new").addEventListener("click",openGameSetup);
 $("#gm-close").addEventListener("click",()=>$("#ov-game").hidden=true);
+$("#gm-sync").addEventListener("click",()=>refreshMaster(()=>{ const a=$("#gm-a").value,b=$("#gm-b").value; fillTeamSelects();
+  if(teamOf(a)) $("#gm-a").value=a; if(teamOf(b)) $("#gm-b").value=b; gmInfo(); },{note:"#gm-note",toast:true}));
 $("#gm-teams").addEventListener("click",()=>{ $("#ov-game").hidden=true; openTeams(); });
 $("#gm-start").addEventListener("click",()=>{
   const a=$("#gm-a").value, b=$("#gm-b").value;
@@ -900,7 +1060,33 @@ $("#gm-start").addEventListener("click",()=>{
 let tmSel=null, tmTour=null, mgOpen=false, tmQ="";
 const numOf2=pid=>((DB.numbers[tmTour]||{})[pid]||"");
 function ensureTour(){ DB.tours=DB.tours||[]; if(!DB.tours.length){ const t={tid:uid("tn"),name:(new Date().getFullYear())+"年度 共通",u:Date.now()}; DB.tours.push(t); DB.numbers[t.tid]={}; if(typeof SYNC!=="undefined") SYNC.masterDirty(); save(); } return DB.tours[0].tid; }
-function openTeams(){ ensureTour(); if(!tmSel) tmSel=Object.keys(DB.teams)[0]; if(!tmTour||!DB.tours.some(x=>x.tid===tmTour)) tmTour=(DB.tours[0]||{}).tid; renderTeams(); $("#ov-team").hidden=false; }
+function openTeams(){ ensureTour(); if(!tmSel) tmSel=Object.keys(DB.teams)[0]; if(!tmTour||!DB.tours.some(x=>x.tid===tmTour)) tmTour=(DB.tours[0]||{}).tid; renderTeams(); $("#ov-team").hidden=false;
+  refreshMaster(()=>{ if(!tmSel||!DB.teams[tmSel]) tmSel=Object.keys(DB.teams)[0]; renderTeams(); },{note:"#tm-note"}); }
+/* ---- 名簿はスプレッドシートが元。開いたとき・戻ってきたときに取り直す ---- */
+let masterAt=0, masterBusy=false;
+function masterNote(sel,msg){ const el=sel&&$(sel); if(el) el.textContent=msg; }
+function masterLabel(){ return masterAt?`名簿：スプレッドシート最新（${new Date(masterAt).toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"})} 取得）`:"名簿：この端末に保存された内容"; }
+async function refreshMaster(after,opt){
+  opt=opt||{};
+  const ok=typeof SYNC!=="undefined"&&SYNC.conn.url&&SYNC.conn.token&&navigator.onLine;
+  if(!ok){ masterNote(opt.note,navigator.onLine?"この端末の名簿を表示中（未接続）":"オフライン：この端末の名簿を表示中"); return false; }
+  if(masterBusy) return false;
+  masterBusy=true; masterNote(opt.note,"スプレッドシートから取得中…");
+  try{
+    await SYNC.pullMaster(); masterAt=Date.now();
+    if(after) after(); masterNote(opt.note,masterLabel());
+    if(opt.toast) toast("名簿を最新にしました");
+    if(typeof SYNC!=="undefined") SYNC.flush();
+    return true;
+  }catch(e){ masterNote(opt.note,"取得できませんでした（この端末の名簿を表示中）"); return false; }
+  finally{ masterBusy=false; }
+}
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState!=="visible") return;
+  if(!$("#ov-team").hidden) refreshMaster(()=>renderTeams(),{note:"#tm-note"});
+  else if(!$("#ov-game").hidden) refreshMaster(()=>{ const a=$("#gm-a").value,b=$("#gm-b").value; fillTeamSelects(); if(teamOf(a))$("#gm-a").value=a; if(teamOf(b))$("#gm-b").value=b; gmInfo(); },{note:"#gm-note"});
+  else if(!$("#home").hidden&&!G) refreshMaster(()=>showHome());
+});
 function mergePlayers(keepPid,dropPid){
   const kt=teamOfPlayer(keepPid);
   Object.values(DB.games).forEach(g=>{
@@ -1006,6 +1192,7 @@ function renderTeams(){
 }
 $("#h-teams").addEventListener("click",openTeams);
 $("#tm-close").addEventListener("click",()=>{ $("#ov-team").hidden=true; if(G) render(); else showHome(); });
+$("#tm-sync").addEventListener("click",()=>refreshMaster(()=>{ if(!tmSel||!DB.teams[tmSel]) tmSel=Object.keys(DB.teams)[0]; renderTeams(); },{note:"#tm-note",toast:true}));
 $("#tm-add").addEventListener("click",()=>{
   const n=window.prompt("チーム名（学校名）"); if(!n) return;
   const t={tid:uid("t"),name:n,short:n.slice(0,4),mine:false,players:[],u:Date.now()};
@@ -1284,9 +1471,21 @@ function renderPAList(){
   $("#pa-list").innerHTML=h;
   const inc=G.pitches.filter(x=>x.ev!=="牽制"&&missing(x)).length;
   $("#pa-count").innerHTML=`${G.pitches.filter(x=>x.ev!=="牽制").length}球${inc?` <span class="miss">要補完 ${inc}</span>`:""}`;
-  const now=$(".pa.now"); if(now&&now.scrollIntoView) now.scrollIntoView({block:"nearest",inline:"nearest"});
+  const now=$(".pa.now"); if(now) scrollIntoPanel(now);
 }
-$("#pa-list").addEventListener("click",e=>{const b=e.target.closest("[data-key]"); if(b) openPAEdit(b.dataset.key);});
+/* パネルの中だけをスクロールさせる（ページ全体が動いて先頭に戻るのを防ぐ） */
+function scrollIntoPanel(el){
+  const c=el.closest(".pbd"); if(!c) return;
+  const er=el.getBoundingClientRect(), cr=c.getBoundingClientRect();
+  if(er.top<cr.top) c.scrollTop+=er.top-cr.top; else if(er.bottom>cr.bottom) c.scrollTop+=er.bottom-cr.bottom;
+  if(er.left<cr.left) c.scrollLeft+=er.left-cr.left; else if(er.right>cr.right) c.scrollLeft+=er.right-cr.right;
+}
+$("#pa-list").addEventListener("click",e=>{const b=e.target.closest("[data-key]"); if(b){ closePA(); openPAEdit(b.dataset.key); }});
+/* 打席一覧（スマホは下から出るシート） */
+function closePA(){ $("#app").classList.remove("pa-open"); }
+$("#c-pa").addEventListener("click",()=>{ $("#app").classList.toggle("pa-open"); if($("#app").classList.contains("pa-open")) renderPAList(); });
+$("#pa-close").addEventListener("click",closePA);
+$("#pa-back").addEventListener("click",closePA);
 $("#cur-log").addEventListener("click",e=>{ if(e.target.closest("[data-cur]")) openPAEdit(`${G.inning}|${G.half}|${G.paNo}`); });
 
 /* ---- 打席の修正 ---- */
@@ -1611,7 +1810,9 @@ function openPick(m){
       return `<button class="btn" data-pid="${p.pid}">${esc(numOf(p.pid)||"—")}　${esc(p.name)}${gr?` <span class="hint">${gr}年</span>`:""}</button>`;
     }).join("");
   $("#ov-pick").hidden=false;
+  if(!pickRefreshing) refreshMaster(()=>{ pickRefreshing=true; try{ openPick(m); }finally{ pickRefreshing=false; } });
 }
+let pickRefreshing=false;
 function quickAdd(){
   const side=pickMode==="bat"?atkSide():defSide(), tid=teamIdOf(side), t=teamOf(tid);
   if(!t) return null;
