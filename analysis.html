@@ -220,7 +220,7 @@ html.prt .barcell{display:none!important}
 <div class="wrap">
   <div class="hd">
     <div>
-      <div class="ttl">配球アナライザー <span style="font-size:11px; font-weight:400; opacity:.6">v8</span></div>
+      <div class="ttl">配球アナライザー <span style="font-size:11px; font-weight:400; opacity:.6">v9</span></div>
       <div class="st" id="src-st">—</div>
     </div>
     <select id="f-year" class="chip" style="display:none; padding:5px 10px"></select>
@@ -343,6 +343,26 @@ html.prt .barcell{display:none!important}
 const $=(s,r)=>(r||document).querySelector(s);
 const $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
 const KEY="hsp-analyzer-v1";
+
+/* ==========================================================================
+   ★ 接続先の設定（この1か所だけ書き換えてください）★
+   Apps Script のウェブアプリURL（https://script.google.com/macros/s/……/exec）を
+   下の APP_URL に貼り付けると、どの端末も「接続設定」をせずに
+   ID とパスワードだけで入れるようになります。
+   ・URL をそのまま書きたくないときは、代わりに APP_URL_B64 に
+     Base64（btoa した文字列）を入れても構いません。
+   ・年度が替わって新しいファイルにしたときは、この行を書き換えて
+     配り直すだけで、全端末の接続先が自動で切り替わります。
+   ・両方とも空のままなら、これまで通り端末ごとに接続設定を入力します。
+   ========================================================================== */
+const APP_URL="";
+const APP_URL_B64="aHR0cHM6Ly9zY3JpcHQuZ29vZ2xlLmNvbS9tYWNyb3Mvcy9BS2Z5Y2J4RktKYkwyd1pmQngzaGFucmRqUllHSUZVXzczOHFxNndEVkZGWTh3ZFZEc1FveXRtZzAwYUxYNmxHZndSRHVyZ3gvZXhlYw==";
+function appUrl(){
+  let u=String(APP_URL||"").trim();
+  if(!u&&APP_URL_B64){ try{ u=atob(String(APP_URL_B64).trim()); }catch(e){ u=""; } }
+  return /^https?:\/\/.+/.test(u)?u:"";
+}
+
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let tT; function toast(m){ const t=$("#toast"); t.textContent=m; t.hidden=false; clearTimeout(tT); tT=setTimeout(()=>t.hidden=true,2000); }
 
@@ -531,6 +551,14 @@ function makeSample(){
 const CONN_KEY="hsp-conn";
 let conn=(function(){ try{ return JSON.parse(localStorage.getItem(CONN_KEY)||"null"); }catch(e){ return null; } })()||{url:"",token:"",user:null,exp:0,year:""};
 const saveConn=()=>{ try{ localStorage.setItem(CONN_KEY,JSON.stringify(conn)); }catch(e){} };
+/* 既定の接続先を自動採用（手動で別のURLにしている端末はそのまま） */
+(function(){
+    const d=appUrl(); if(!d) return;
+    if(!conn.url){ conn.url=d; conn.autoUrl=d; saveConn(); return; }
+    if(conn.autoUrl&&conn.autoUrl!==d&&conn.url===conn.autoUrl){
+      conn.url=d; conn.autoUrl=d; conn.token=""; conn.user=null; saveConn(); }
+  })();
+
 let INDEX=null, YEAR="", CACHE={};
 async function api(action,payload,opt){
   const url=(opt&&opt.url)||conn.url; if(!url) throw new Error("接続先が未設定です");
@@ -1143,7 +1171,9 @@ function init(){
 (function boot(){
   renderUser();
   if(conn.url&&conn.token){ bootApi(); return; }
-  if(conn.url){ showLogin(); return; }
+  if(conn.url){ showLogin();
+    if(navigator.onLine) api("ping").then(j=>{ if(j&&j.ok){ conn.year=j.year||""; saveConn(); const y=$("#lg-year"); if(y) y.textContent=conn.year?conn.year+"年度の記録":""; } }).catch(()=>{});
+    return; }
   let saved=null; try{ saved=localStorage.getItem(KEY); }catch(e){}
   if(saved){ const rows=parseTSV(saved); if(rows.length){ ROWS=rows; SRC="user"; } }
   if(!ROWS.length){ ROWS=makeSample(); SRC="sample"; }

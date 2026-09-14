@@ -232,7 +232,7 @@ svg.field{width:100%; height:auto; display:block; border-radius:9px; touch-actio
 .vrow{display:grid; grid-template-columns:4.6em 1fr 5.6em; gap:8px; align-items:center; border-bottom:1px solid var(--line); padding:5px 2px}
 .vrow .meta{font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .vrow .who{font-size:11px; color:var(--muted)}
-input[type=text], input[type=tel], select{width:100%; font:inherit; font-size:14px; color:var(--ink); background:var(--paper); border:1px solid var(--line); border-radius:7px; padding:6px 8px}
+input[type=text], input[type=tel], input[type=password], select{width:100%; font:inherit; font-size:14px; color:var(--ink); background:var(--paper); border:1px solid var(--line); border-radius:7px; padding:6px 8px}
 input.vin{font-family:var(--num); font-size:17px; text-align:center; padding:5px}
 input.vin:focus{border-color:var(--accent); outline:none}
 input.no{width:3.6em; text-align:center; font-family:var(--num); font-size:15px; font-weight:700}
@@ -466,7 +466,7 @@ table.ros td{padding:2px 4px; border-top:1px solid var(--line)}
   <div class="read" id="h-sync" style="margin-bottom:14px; justify-content:space-between">
     <span id="h-sync-t" class="hint">未接続</span>
     <span class="hint" id="h-master" style="width:100%; order:3"></span>
-    <span style="display:flex; gap:6px; align-items:center"><span class="hint" id="h-ver" style="opacity:.6">v19</span>
+    <span style="display:flex; gap:6px; align-items:center"><span class="hint" id="h-ver" style="opacity:.6">v20</span>
       <button class="mini" id="h-flush">今すぐ同期</button>
       <button class="mini" id="h-logout">ログアウト</button>
       <button class="mini" id="h-conn">接続設定</button>
@@ -833,6 +833,26 @@ table.ros td{padding:2px 4px; border-top:1px solid var(--line)}
 const $=(s,r)=>(r||document).querySelector(s);
 const $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
 const KEY="hsp-v3", OLD="haikyu-scorepad-v2";
+
+/* ==========================================================================
+   ★ 接続先の設定（この1か所だけ書き換えてください）★
+   Apps Script のウェブアプリURL（https://script.google.com/macros/s/……/exec）を
+   下の APP_URL に貼り付けると、どの端末も「接続設定」をせずに
+   ID とパスワードだけで入れるようになります。
+   ・URL をそのまま書きたくないときは、代わりに APP_URL_B64 に
+     Base64（btoa した文字列）を入れても構いません。
+   ・年度が替わって新しいファイルにしたときは、この行を書き換えて
+     配り直すだけで、全端末の接続先が自動で切り替わります。
+   ・両方とも空のままなら、これまで通り端末ごとに接続設定を入力します。
+   ========================================================================== */
+const APP_URL="";
+const APP_URL_B64="aHR0cHM6Ly9zY3JpcHQuZ29vZ2xlLmNvbS9tYWNyb3Mvcy9BS2Z5Y2J4RktKYkwyd1pmQngzaGFucmRqUllHSUZVXzczOHFxNndEVkZGWTh3ZFZEc1FveXRtZzAwYUxYNmxHZndSRHVyZ3gvZXhlYw==";
+function appUrl(){
+  let u=String(APP_URL||"").trim();
+  if(!u&&APP_URL_B64){ try{ u=atob(String(APP_URL_B64).trim()); }catch(e){ u=""; } }
+  return /^https?:\/\/.+/.test(u)?u:"";
+}
+
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const uid=p=>p+"-"+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const today=()=>new Date().toISOString().slice(0,10);
@@ -2131,6 +2151,14 @@ const SYNC=(function(){
   OB();
   let conn=(function(){ try{ return JSON.parse(localStorage.getItem(CONN_KEY)||"null"); }catch(e){ return null; } })()||{url:"",token:"",user:null,exp:0,year:""};
   const saveConn=()=>{ try{ localStorage.setItem(CONN_KEY,JSON.stringify(conn)); }catch(e){} };
+  /* 既定の接続先を自動採用（手動で別のURLにしている端末はそのまま） */
+  (function(){
+    const d=appUrl(); if(!d) return;
+    if(!conn.url){ conn.url=d; conn.autoUrl=d; saveConn(); return; }
+    if(conn.autoUrl&&conn.autoUrl!==d&&conn.url===conn.autoUrl){
+      conn.url=d; conn.autoUrl=d; conn.token=""; conn.user=null; saveConn(); }
+  })();
+
   let timer=null, ticker=null;
   const pending=()=>{ const o=OB(); return Object.keys(o.rows).length+Object.keys(o.dels).length+Object.keys(o.games).length+Object.keys(o.gdels).length; };
   function dirtyGame(gid){ const g=DB.games[gid]; if(!g) return; const o=OB(); g.u=Date.now(); o.games[gid]=1; delete o.gdels[gid]; schedule(); }
@@ -2249,7 +2277,9 @@ const SYNC=(function(){
     ticker=setInterval(flush,30000);
     renderStatus();
     if(!conn.url){ if(!DB.standalone) showConn(); return; }
-    if(!conn.token){ showLogin(); return; }
+    if(!conn.token){ showLogin();
+      if(navigator.onLine) api("ping").then(j=>{ if(j&&j.ok){ conn.year=j.year||""; saveConn(); const y=$("#lg-year"); if(y) y.textContent=conn.year?conn.year+"年度の記録":""; } }).catch(()=>{});
+      return; }
     if(navigator.onLine){
       try{ const j=await api("me"); if(j.ok){ conn.user=j.user; saveConn(); if(!DB.connectedAt) await afterLogin(true); else { pullMaster().catch(()=>{}); flush(); } } }
       catch(e){ st.err="サーバーに届きません（オフラインで続行）"; renderStatus(); }
