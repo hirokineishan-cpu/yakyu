@@ -220,7 +220,7 @@ html.prt .barcell{display:none!important}
 <div class="wrap">
   <div class="hd">
     <div>
-      <div class="ttl">解析 <span style="font-size:11px; font-weight:400; opacity:.6">v11</span></div>
+      <div class="ttl">解析<span id="an-team" style="font-size:13px; margin-left:8px; color:#ffd479"></span> <span style="font-size:11px; font-weight:400; opacity:.6">v12</span></div>
       <div class="st" id="src-st">—</div>
     </div>
     <span class="chip" id="c-mine" style="display:none"></span>
@@ -346,6 +346,10 @@ const $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
    ========================================================================== */
 const APP_URL="";
 const APP_URL_B64="aHR0cHM6Ly9zY3JpcHQuZ29vZ2xlLmNvbS9tYWNyb3Mvcy9BS2Z5Y2J4RktKYkwyd1pmQngzaGFucmRqUllHSUZVXzczOHFxNndEVkZGWTh3ZFZEc1FveXRtZzAwYUxYNmxHZndSRHVyZ3gvZXhlYw==";
+/* ▼ チームごとの名札（入力アプリと必ず同じにしてください） */
+const TEAM_ID="aomoriyamada";
+const TEAM_NAME="青森山田高校";
+const MIGRATE_LEGACY=true;
 function appUrl(){
   let u=String(APP_URL||"").trim();
   if(!u&&APP_URL_B64){ try{ u=atob(String(APP_URL_B64).trim()); }catch(e){ u=""; } }
@@ -421,9 +425,11 @@ function normalize(o){
   return r;
 }
 /* ================= サーバー接続 ================= */
-const CONN_KEY="hsp-conn";
+const CONN_KEY="hsp-conn-"+TEAM_ID;
 let conn=(function(){ try{ return JSON.parse(localStorage.getItem(CONN_KEY)||"null"); }catch(e){ return null; } })()||{url:"",token:"",user:null,exp:0,year:""};
 const saveConn=()=>{ try{ localStorage.setItem(CONN_KEY,JSON.stringify(conn)); }catch(e){} };
+(function migrateConn(){ try{ const o=localStorage.getItem("hsp-owner");
+  if(MIGRATE_LEGACY&&(!o||o===TEAM_ID)&&!localStorage.getItem(CONN_KEY)){ const c=localStorage.getItem("hsp-conn"); if(c){ localStorage.setItem(CONN_KEY,c); conn=JSON.parse(c); } } }catch(e){} })();
 /* 既定の接続先を自動採用（手動で別のURLにしている端末はそのまま） */
 (function(){
     const d=appUrl(); if(!d) return;
@@ -442,6 +448,7 @@ async function api(action,payload,opt){
 }
 function showConn(msg){ $("#cn-url").value=conn.url||""; $("#cn-msg").textContent=msg||""; $("#ov-conn").hidden=false; }
 function showLogin(msg){ $("#lg-msg").textContent=msg||""; $("#lg-year").textContent=conn.year?conn.year+"年度":""; $("#ov-login").hidden=false; setTimeout(()=>$("#lg-id").focus(),50); }
+function showTeamName(){ const e=$("#an-team"); if(e) e.textContent=TEAM_NAME?"／ "+TEAM_NAME:""; }
 function renderUser(){
   const u=$("#c-user"), ad=$("#c-admin"), lo=$("#c-logout"), li=$("#c-login");
   const inn=!!(conn.url&&conn.token&&conn.user);
@@ -457,6 +464,20 @@ function doLogout(){
   $("#src-st").textContent="ログアウトしました";
   $("#kpis").innerHTML=""; $("#body").innerHTML="";
   renderUser(); showLogin("ログアウトしました。続けるにはログインしてください");
+}
+let bindNG="";
+async function checkTeam(){
+  if(!TEAM_ID) return true;
+  try{
+    const j=await api("ping"); if(!j||!j.ok) return true;
+    const t=String(j.team||""); if(!t){ bindNG=""; return true; }
+    if(t!==TEAM_ID){
+      bindNG=`接続先が違います。このページは「${TEAM_NAME||TEAM_ID}」用ですが、つながっている先は別のチーム（${esc(t)}）のファイルです。`;
+      $("#src-st").textContent=bindNG; $("#kpis").innerHTML=""; $("#body").innerHTML=`<div class="card"><div class="empty">${esc(bindNG)}<br>管理者に連絡してください。</div></div>`;
+      return false;
+    }
+    bindNG=""; return true;
+  }catch(e){ return true; }
 }
 async function loadIndex(){
   const j=await api("getIndex",{year:YEAR||undefined}); if(!j.ok) throw new Error(j.error);
@@ -528,7 +549,7 @@ $("#ad-roll").addEventListener("click",async()=>{ const y=Number(conn.year||new 
   try{ const j=await api("rollover",{newYear:y}); if(!j.ok) throw new Error(j.error); $("#ad-rollmsg").innerHTML=`作成しました：<a href="${esc(j.url)}" target="_blank" rel="noopener">${esc(y)}年度 野球記録</a><br>${esc(j.note)}`; }
   catch(err){ $("#ad-rollmsg").textContent=String(err.message||err); } });
 async function bootApi(){
-  try{ await loadIndex(); SRC="api"; F.sel=""; buildPlayerOptions(); buildFilterOptions(); await loadSel(); }
+  try{ if(!await checkTeam()) return; await loadIndex(); SRC="api"; F.sel=""; buildPlayerOptions(); buildFilterOptions(); await loadSel(); }
   catch(e){ toast("読み込みに失敗："+(e.message||e)); }
 }
 
@@ -1049,7 +1070,7 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>
 
 function init(){ buildPlayerOptions(); buildFilterOptions(); render(); }
 (function boot(){
-  renderUser();
+  showTeamName(); renderUser();
   if(conn.url&&conn.token){ bootApi(); return; }
   if(conn.url){ showLogin();
     if(navigator.onLine) api("ping").then(j=>{ if(j&&j.ok){ conn.year=j.year||""; saveConn(); const y=$("#lg-year"); if(y) y.textContent=conn.year?conn.year+"年度の記録":""; } }).catch(()=>{});

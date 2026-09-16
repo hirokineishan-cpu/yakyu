@@ -1,6 +1,6 @@
 {
-  "name": "配球スコアパッド",
-  "short_name": "スコアパッド",
+  "name": "配球スコアパッド 青森山田高校",
+  "short_name": "青森山田高校",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
@@ -8,7 +8,15 @@
   "background_color": "#e7ece8",
   "theme_color": "#1f4e36",
   "icons": [
-    {"src": "./icon-192.png", "sizes": "192x192", "type": "image/png"},
-    {"src": "./icon-512.png", "sizes": "512x512", "type": "image/png"}
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
   ]
 }

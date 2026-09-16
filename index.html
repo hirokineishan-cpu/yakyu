@@ -449,7 +449,7 @@ table.ros td{padding:2px 4px; border-top:1px solid var(--line)}
 <div class="home" id="home">
   <div class="hhd">
     <div>
-      <div class="htitle">配球スコアパッド</div>
+      <div class="htitle">配球スコアパッド<span id="h-team-name" style="font-size:14px; font-weight:700; color:var(--clay); margin-left:8px"></span></div>
       <div class="hsub" id="home-sub">—</div>
     </div>
     <div style="display:flex; gap:7px; flex-wrap:wrap">
@@ -472,7 +472,8 @@ table.ros td{padding:2px 4px; border-top:1px solid var(--line)}
   <div class="read" id="h-sync" style="margin-bottom:14px; justify-content:space-between">
     <span id="h-sync-t" class="hint">未接続</span>
     <span class="hint" id="h-master" style="width:100%; order:3"></span>
-    <span style="display:flex; gap:6px; align-items:center"><span class="hint" id="h-ver" style="opacity:.6">v23</span>
+    <span id="h-bind" style="width:100%; order:4; display:none; color:var(--clay); font-weight:700; font-size:12.5px"></span>
+    <span style="display:flex; gap:6px; align-items:center"><span class="hint" id="h-ver" style="opacity:.6">v24</span>
       <button class="mini" id="h-flush">今すぐ同期</button>
       <button class="mini" id="h-conn">接続先</button>
     </span>
@@ -807,10 +808,6 @@ table.ros td{padding:2px 4px; border-top:1px solid var(--line)}
 <script>
 (function(){
 "use strict";
-const $=(s,r)=>(r||document).querySelector(s);
-const $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
-const KEY="hsp-v3", OLD="haikyu-scorepad-v2";
-
 /* ==========================================================================
    ★ 接続先の設定（この1か所だけ書き換えてください）★
    Apps Script のウェブアプリURL（https://script.google.com/macros/s/……/exec）を
@@ -824,6 +821,40 @@ const KEY="hsp-v3", OLD="haikyu-scorepad-v2";
    ========================================================================== */
 const APP_URL="";
 const APP_URL_B64="aHR0cHM6Ly9zY3JpcHQuZ29vZ2xlLmNvbS9tYWNyb3Mvcy9BS2Z5Y2J4RktKYkwyd1pmQngzaGFucmRqUllHSUZVXzczOHFxNndEVkZGWTh3ZFZEc1FveXRtZzAwYUxYNmxHZndSRHVyZ3gvZXhlYw==";
+/* ▼ チームごとの名札。別チームへ配るときは、ここも必ず変えてください。
+   TEAM_ID … 端末の中でデータを分けるための名前（英数字。チームごとに必ず別のもの）
+   TEAM_NAME … 画面に出すチーム名（取り違え防止のため常に表示します） */
+const TEAM_ID="aomoriyamada";
+const TEAM_NAME="青森山田高校";
+/* 旧版（チーム分けが無かった頃）の保存データを引き継ぐかどうか。
+   最初に導入したチームだけ true。新しく増やすチームは必ず false のままにしてください。 */
+const MIGRATE_LEGACY=true;
+const $=(s,r)=>(r||document).querySelector(s);
+const $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
+const KEY="hsp-v3-"+TEAM_ID, OLD="haikyu-scorepad-v2";
+const OWNER_KEY="hsp-owner";
+/* 同じ置き場所を使い回した場合でも、別チームのデータを引き継がないようにする。
+   引き継ぐのは「まだ誰も使っていない」か「自分のチームが使っていた」ときだけ。 */
+(function migrateStore(){
+  try{
+    const owner=localStorage.getItem(OWNER_KEY);
+    if(owner&&owner!==TEAM_ID) return;                 // 別チームのデータには触らない
+    if(MIGRATE_LEGACY){                                 // 旧版からの引き継ぎ（元データは消さない）
+      if(!localStorage.getItem(KEY)){
+        const old=localStorage.getItem("hsp-v3");
+        if(old) localStorage.setItem(KEY,old);
+      }
+      const ck="hsp-conn-"+TEAM_ID;
+      if(!localStorage.getItem(ck)){
+        const oldc=localStorage.getItem("hsp-conn");
+        if(oldc) localStorage.setItem(ck,oldc);
+      }
+    }
+    localStorage.setItem(OWNER_KEY,TEAM_ID);
+  }catch(e){}
+})();
+
+
 function appUrl(){
   let u=String(APP_URL||"").trim();
   if(!u&&APP_URL_B64){ try{ u=atob(String(APP_URL_B64).trim()); }catch(e){ u=""; } }
@@ -939,6 +970,7 @@ function isAdmin(){ try{ return !!(SYNC&&SYNC.conn&&SYNC.conn.user&&SYNC.conn.us
 function showHome(){
   G=null; RO=false; $("#app").classList.remove("ro"); $("#ro-badge").hidden=true; $("#home").hidden=false; $("#app").hidden=true;
   $("#h-rec").value=DB.recorder||"";
+  const tn=$("#h-team-name"); if(tn) tn.textContent=TEAM_NAME?`／ ${TEAM_NAME}`:"";
   $("#h-dev").textContent=`端末ID ${DB.deviceId.slice(-6)}　／　保存済み ${Object.keys(DB.games).length}試合`;
   $("#home-sub").textContent=`${Object.keys(DB.teams).length}チーム登録済み　／　この端末のデータはこの端末に保存されます`;
   fillTeamFilter($("#h-team"),DB.homeTeam||"");
@@ -2052,7 +2084,7 @@ $("#srv-list").addEventListener("click",async e=>{
 });
 
 /* ================= 同期（スプレッドシート連携） ================= */
-const CONN_KEY="hsp-conn";
+const CONN_KEY="hsp-conn-"+TEAM_ID;
 const SYNC=(function(){
   const st={flushing:false,last:0,err:"",online:navigator.onLine};
   function OB(){ if(!DB.outbox) DB.outbox={}; ["rows","dels","games","gdels"].forEach(k=>{ if(!DB.outbox[k]) DB.outbox[k]={}; }); if(!DB.numbersU) DB.numbersU={}; return DB.outbox; }
@@ -2128,6 +2160,7 @@ const SYNC=(function(){
   async function pullMaster(){ const j=await api("getMaster"); if(j.ok){ mergeMaster(j.master); conn.year=j.master.year||conn.year; saveConn(); } return j; }
   async function pushMaster(){ const j=await api("upsertMaster",{master:masterPayload()}); if(j.ok){ DB.masterDirty=false; mergeMaster(j.master); } return j; }
   async function flush(){
+    if(bindNG){ renderStatus(); return; }
     if(!conn.url||!conn.token||st.flushing) return;
     if(!navigator.onLine){ st.online=false; renderStatus(); return; }
     st.flushing=true; st.err=""; renderStatus(); OB();
@@ -2153,20 +2186,21 @@ const SYNC=(function(){
   }
   function renderStatus(){
     const n=pending();
-    const chip=$("#c-sync"); if(chip){ chip.textContent = !conn.url?"未接続": st.flushing?"送信中…": n?`未送信 ${n}`: (st.online?"同期済":"オフライン"); chip.classList.toggle("pend",n>0); chip.classList.toggle("off",!st.online&&!n); }
+    const chip=$("#c-sync"); if(chip){ chip.textContent = bindNG?"送信停止": !conn.url?"未接続": st.flushing?"送信中…": n?`未送信 ${n}`: (st.online?"同期済":"オフライン"); chip.classList.toggle("pend",n>0||!!bindNG); chip.classList.toggle("off",!st.online&&!n&&!bindNG); }
     const inn=!!(conn.url&&conn.token&&conn.user);
     const un=$("#h-uname"), ur=$("#h-urole"), bi=$("#h-login"), bo=$("#h-logout");
     if(un){ un.textContent=inn?conn.user.name:"ログインしていません"; }
     if(ur){ ur.textContent=inn?`（${conn.user.role}）`:""; }
     if(bi) bi.hidden=inn;
     if(bo) bo.hidden=!inn;
+    const warn=$("#h-bind"); if(warn){ warn.textContent=bindNG||""; warn.style.display=bindNG?"":"none"; }
     const t=$("#h-sync-t"); if(t){
       if(!conn.url) t.textContent="スプレッドシートに未接続です（接続設定から）";
       else t.innerHTML=`<b>${esc(conn.year?conn.year+"年度":"")}</b>のスプレッドシートに接続　／　未送信 <b>${n}</b>${st.last?`　／　最終同期 ${new Date(st.last).toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"})}`:""}${st.err?`　<span style="color:var(--clay)">⚠ ${esc(st.err)}</span>`:""}${!st.online?"　（オフライン：復帰後に自動送信）":""}`;
     }
   }
   function showConn(msg){ $("#cn-url").value=conn.url||""; $("#cn-msg").textContent=msg||""; $("#ov-conn").hidden=false; }
-  function showLogin(msg){ $("#lg-msg").textContent=msg||""; $("#lg-year").textContent=conn.year?conn.year+"年度":""; $("#ov-login").hidden=false; setTimeout(()=>$("#lg-id").focus(),50); }
+  function showLogin(msg){ $("#lg-msg").textContent=msg||""; $("#lg-year").textContent=(TEAM_NAME?TEAM_NAME+"　":"")+(conn.year?conn.year+"年度の記録":""); $("#ov-login").hidden=false; setTimeout(()=>$("#lg-id").focus(),50); }
   async function testConn(url){ const j=await api("ping",{}, {url}); if(!j.ok) throw new Error(j.error||"応答が不正です"); return j; }
   async function login(id,pw){
     const j=await api("login",{id,password:pw}); if(!j.ok) throw new Error(j.error||"ログインに失敗");
@@ -2174,6 +2208,7 @@ const SYNC=(function(){
   }
   function logout(){ if(conn.token){ api("logout").catch(()=>{}); } conn.token=""; conn.user=null; saveConn(); renderStatus(); }
   async function afterLogin(first){
+    if(!await checkTeam()) return;
     try{ await pullMaster(); }catch(e){ st.err=String(e.message||e); }
     if(first){
       const nG=Object.keys(DB.games).length, nT=Object.keys(DB.teams).length;
@@ -2185,6 +2220,26 @@ const SYNC=(function(){
     }
     flush();
   }
+  /* 接続先ファイルのチームIDと、このアプリのチームIDが一致するか確かめる。
+     違えば送受信を止める。空なら（初回）管理者のログイン時に書き込んで固定する。 */
+  let bindNG="";
+  async function checkTeam(){
+    if(!TEAM_ID) return true;
+    try{
+      const j=await api("ping");
+      if(!j||!j.ok) return true;                      // 通信できないときは判定しない
+      const t=String(j.team||"");
+      if(!t){
+        if(conn.user&&conn.user.role==="管理"){ try{ await api("setTeamId",{team:TEAM_ID}); }catch(e){} }
+        bindNG=""; return true;
+      }
+      if(t!==TEAM_ID){
+        bindNG=`接続先が違います。このアプリは「${TEAM_NAME||TEAM_ID}」用ですが、つながっている先は別のチーム（${esc(t)}）のファイルです。記録は送信しません。管理者に連絡してください。`;
+        st.err=bindNG; renderStatus(); return false;
+      }
+      bindNG=""; return true;
+    }catch(e){ return true; }
+  }
   async function boot(){
     window.addEventListener("online",()=>{ st.online=true; flush(); });
     window.addEventListener("offline",()=>{ st.online=false; renderStatus(); });
@@ -2195,7 +2250,8 @@ const SYNC=(function(){
       if(navigator.onLine) api("ping").then(j=>{ if(j&&j.ok){ conn.year=j.year||""; saveConn(); const y=$("#lg-year"); if(y) y.textContent=conn.year?conn.year+"年度の記録":""; } }).catch(()=>{});
       return; }
     if(navigator.onLine){
-      try{ const j=await api("me"); if(j.ok){ conn.user=j.user; saveConn(); if(!DB.connectedAt) await afterLogin(true); else { pullMaster().catch(()=>{}); flush(); } } }
+      try{ const j=await api("me"); if(j.ok){ conn.user=j.user; saveConn(); if(!await checkTeam()) return;
+            if(!DB.connectedAt) await afterLogin(true); else { pullMaster().catch(()=>{}); flush(); } } }
       catch(e){ st.err="サーバーに届きません（オフラインで続行）"; renderStatus(); }
     }
   }
