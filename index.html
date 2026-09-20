@@ -2278,8 +2278,6 @@ const SYNC=(function(){
 })();
 if("serviceWorker" in navigator&&location.protocol.startsWith("http")){ navigator.serviceWorker.register("./sw.js").catch(()=>{}); }
 
-if("serviceWorker" in navigator&&location.protocol.startsWith("http")){ navigator.serviceWorker.register("./sw.js").catch(()=>{}); }
-
 /* ---- 起動 ---- */
 if(FRESH) migrateV2();
 showHome();   /* 起動はいつも試合一覧から（前回の試合は一覧で目印が付きます） */

@@ -27,6 +27,7 @@
   --hit:#1e8a4c; --out:#8d9aa0; --foul:#a8790c;
   --heat0:#fbf1ea; --heat1:#e9a67f; --heat2:#b4552f; --heat3:#5e2812;
   --bar:#2b6699;
+  --t1:#2a78d6; --t2:#eb6834; --t3:#1baf7a; --t4:#eda100; --t5:#e87ba4; --t6:#008300; --t7:#4a3aa7; --t8:#e34948; --t0:#8d9aa0;
   --shadow:0 1px 2px rgba(21,32,41,.10), 0 6px 16px rgba(21,32,41,.06);
   --r:10px;
   --jp:"Zen Kaku Gothic New","Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;
@@ -42,6 +43,7 @@
     --hit:#2f9a62; --out:#6f7f84; --foul:#d2a63d;
     --heat0:#2a221e; --heat1:#7a3f24; --heat2:#d8794f; --heat3:#f6c7a8;
     --bar:#5f9fd0;
+    --t1:#3987e5; --t2:#d95926; --t3:#199e70; --t4:#c98500; --t5:#d55181; --t6:#008300; --t7:#9085e9; --t8:#e66767; --t0:#6f7f84;
     --shadow:0 1px 2px rgba(0,0,0,.4), 0 6px 16px rgba(0,0,0,.28);
   }
 }
@@ -54,6 +56,7 @@
   --hit:#2f9a62; --out:#6f7f84; --foul:#d2a63d;
   --heat0:#2a221e; --heat1:#7a3f24; --heat2:#d8794f; --heat3:#f6c7a8;
   --bar:#5f9fd0;
+  --t1:#3987e5; --t2:#d95926; --t3:#199e70; --t4:#c98500; --t5:#d55181; --t6:#008300; --t7:#9085e9; --t8:#e66767; --t0:#6f7f84;
   --shadow:0 1px 2px rgba(0,0,0,.4), 0 6px 16px rgba(0,0,0,.28);
 }
 *{box-sizing:border-box}
@@ -130,6 +133,34 @@ svg.field{width:100%; max-width:520px; height:auto; display:block; margin:0 auto
 .sw.sq{border-radius:2px} .sw.dm{transform:rotate(45deg); border-radius:2px}
 .sw.hit{background:var(--hit)} .sw.out{background:var(--out)} .sw.foul{background:none; border:2px solid var(--out)}
 
+/* 球種ミックス（積み上げ棒）：カウント別・走者別の配球割合 */
+.mix{display:flex; gap:2px; width:100%; overflow:hidden}
+.mix .sg{display:flex; align-items:center; justify-content:center; min-width:2px}
+.mix .sg:first-child{border-radius:4px 0 0 4px} .mix .sg:last-child{border-radius:0 4px 4px 0}
+.mix .sg:only-child{border-radius:4px}
+.mix .sg b{color:#fff; font-family:var(--num); font-size:11px; font-weight:700; text-shadow:0 0 2px rgba(0,0,0,.45)}
+.mix.none{border:1px dashed var(--line); border-radius:4px; align-items:center; justify-content:center; color:var(--muted); font-size:11px}
+.mixlg{display:flex; gap:11px; flex-wrap:wrap; font-size:11.5px; color:var(--ink2); margin:0 0 9px; align-items:center}
+.mixlg span{display:inline-flex; align-items:center; gap:5px}
+.mixlg i{width:11px; height:11px; border-radius:3px; display:inline-block}
+.mixgrid{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px}
+.mixcell{border:1px solid var(--line); border-radius:8px; padding:6px 8px; background:var(--raise); min-width:0}
+.mixcell.few{opacity:.5; border-style:dashed}
+.mixcell .mxh{display:flex; align-items:baseline; gap:6px; margin-bottom:4px; line-height:1.2}
+.mixcell .mxh b{font-family:var(--num); font-size:14px}
+.mixcell .mxh span{font-size:11px; color:var(--muted); font-family:var(--num)}
+.mixrow{display:grid; grid-template-columns:78px minmax(0,1fr) 46px; gap:8px; align-items:center; margin:6px 0}
+.mixrow .nm{font-size:12.5px}
+.mixrow .n{text-align:right; font-size:11.5px; color:var(--muted); font-family:var(--num)}
+.mixrow.few{opacity:.5}
+.mixsec{font-size:11.5px; color:var(--muted); margin:10px 0 2px}
+.rcgrid{display:grid; grid-template-columns:68px repeat(3,minmax(0,1fr)); gap:7px; align-items:center}
+.rcgrid .hh{font-size:11px; color:var(--muted); text-align:center; font-weight:700}
+.rcgrid .rl{font-size:12px; font-weight:700}
+@media (max-width:560px){ .mixgrid{grid-template-columns:repeat(2,minmax(0,1fr))} .mixrow{grid-template-columns:66px minmax(0,1fr) 42px} }
+html.prt .mixgrid{grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px}
+html.prt .mixcell{padding:5px 6px}
+
 /* tables */
 /* 表：横スクロールは使わず、収まらないときは表全体の文字を小さくして必ず全列を見せる（fitTables） */
 .tbl-wrap{overflow:visible}
@@ -187,7 +218,8 @@ textarea{width:100%; min-height:200px; font-family:ui-monospace,Menlo,monospace;
 html.prt, html.prt[data-theme="dark"]{ color-scheme:light;
   --ink:#152029; --ink2:#3d4b54; --muted:#6d7c82; --paper:#ffffff; --ground:#ffffff; --raise:#f3f7f3; --line:#c9d3cd;
   --grass:#2e6b4a; --grassDeep:#1f4e36; --claySoft:#e6cdc0; --clay:#b4552f; --accent:#2e6b4a; --accentInk:#ffffff;
-  --hit:#1e8a4c; --out:#8d9aa0; --foul:#a8790c; --heat0:#fbf1ea; --heat1:#e9a67f; --heat2:#b4552f; --heat3:#5e2812; --bar:#2b6699; --shadow:none }
+  --hit:#1e8a4c; --out:#8d9aa0; --foul:#a8790c; --heat0:#fbf1ea; --heat1:#e9a67f; --heat2:#b4552f; --heat3:#5e2812; --bar:#2b6699; --shadow:none;
+  --t1:#2a78d6; --t2:#eb6834; --t3:#1baf7a; --t4:#eda100; --t5:#e87ba4; --t6:#008300; --t7:#4a3aa7; --t8:#e34948; --t0:#8d9aa0; }
 html.prt body{background:#fff; color:#152029; font-size:12px}
 html.prt .wrap{width:710px; max-width:none; padding:0; margin:0}   /* A4 210mm − 余白22mm ≒ 710px */
 html.prt .hd,html.prt .filters,html.prt .tip,html.prt .ov,html.prt .toast{display:none!important}
@@ -220,7 +252,7 @@ html.prt .barcell{display:none!important}
 <div class="wrap">
   <div class="hd">
     <div>
-      <div class="ttl">解析<span id="an-team" style="font-size:13px; margin-left:8px; color:#ffd479"></span> <span style="font-size:11px; font-weight:400; opacity:.6">v12</span></div>
+      <div class="ttl">解析<span id="an-team" style="font-size:13px; margin-left:8px; color:#ffd479"></span> <span style="font-size:11px; font-weight:400; opacity:.6">v13</span></div>
       <div class="st" id="src-st">—</div>
     </div>
     <span class="chip" id="c-mine" style="display:none"></span>
@@ -897,6 +929,76 @@ window.addEventListener("beforeprint",printOn);
 window.addEventListener("afterprint",printOff);
 try{ window.matchMedia("print").addEventListener("change",e=>{ if(e.matches) printOn(); else printOff(); }); }catch(e){}
 
+
+/* ================= 配球ミックス（カウント別・走者別の球種割合） ================= */
+/* 色は球種ごとに固定。並び順も固定なので、選手を変えても同じ球種は同じ色。 */
+const TYPE_SLOT={"直球":1,"スライダー":2,"カーブ":3,"フォーク":4,"チェンジ":5,"シュート":6,"カット":7,"ツーシーム":8};
+const MIX_OTHER="その他";
+function mixKeyOf(t){ t=t||"未入力"; if(t==="未入力"||t==="不明") return t; return TYPE_SLOT[t]?t:MIX_OTHER; }
+function mixColor(k){ return "var(--t"+(TYPE_SLOT[k]||0)+")"; }
+function mixCount(rows){ const m=new Map(); rows.forEach(r=>{ const k=mixKeyOf(r.球種); m.set(k,(m.get(k)||0)+1); }); return m; }
+function mixOrder(m){ return Array.from(m.keys()).sort((x,y)=>(TYPE_SLOT[x]||90)-(TYPE_SLOT[y]||90)||String(x).localeCompare(y)); }
+function mixBar(rows,opt){
+  opt=opt||{}; const h=opt.h||22, n=rows.length;
+  if(!n) return `<div class="mix none" style="height:${h}px">記録なし</div>`;
+  const m=mixCount(rows), ks=mixOrder(m), min=opt.minlab==null?12:opt.minlab;
+  const sg=ks.map(k=>{ const v=m.get(k), pc=100*v/n;
+    return `<div class="sg" style="flex:${v}; background:${mixColor(k)}" data-tip="${esc(k)}　${v}球（${Math.round(pc)}%）／ 全${n}球">${pc>=min?`<b>${Math.round(pc)}</b>`:""}</div>`; }).join("");
+  return `<div class="mix" style="height:${h}px">${sg}</div>`;
+}
+function mixLegend(rows){
+  const ks=mixOrder(mixCount(rows));
+  if(!ks.length) return "";
+  return `<div class="mixlg">${ks.map(k=>`<span><i style="background:${mixColor(k)}"></i>${esc(k)}</span>`).join("")}<span class="muted">棒の数字は割合（％）</span></div>`;
+}
+function mixTyped(rows){ return rows.some(r=>mixKeyOf(r.球種)!=="未入力"); }
+/* 既定では球種が未入力の球を外して割合を出す（チェックで含められる） */
+let mixBlank=false;
+function mixUse(rows){ return mixBlank?rows:rows.filter(r=>mixKeyOf(r.球種)!=="未入力"); }
+function mixBlankBox(all,used){
+  const off=all.length-used.length;
+  return `<label style="margin-left:auto; font-weight:400; letter-spacing:0; font-size:12px; display:flex; gap:5px; align-items:center">
+    <input type="checkbox" id="mix-blank" ${mixBlank?"checked":""}>未入力も含める${off?`（${off}球）`:""}</label>`;
+}
+function cardMixNone(n){
+  return `<div class="card" style="grid-column:1/-1"><h3>カウント別・走者別の球種割合</h3>
+    <div class="empty" style="padding:12px 0">この条件の${n}球は球種がすべて未入力のため、配球の割合は出せません。<br>
+    入力アプリで球種を記録するか、球種が入っている試合・選手に絞り込んでください。</div></div>`;
+}
+/* 球種が入っていない球が多いときの注意書き */
+function mixWarn(rows){
+  const n=rows.length; if(!n) return "";
+  const miss=rows.filter(r=>mixKeyOf(r.球種)==="未入力").length;
+  if(miss/n<0.2) return "";
+  return `<div class="mixsec" style="color:var(--clay)">この条件の${n}球のうち${miss}球は球種が未入力です（灰色の部分）。割合は入力済みの${n-miss}球と合わせた${n}球に対するものです。</div>`;
+}
+const MIXCG=["初球","途中のカウント","2ストライク"];
+function mixCg(r){ return (r.B===0&&r.S===0)?"初球":(r.S===2?"2ストライク":"途中のカウント"); }
+
+function cardMixCount(all,title,sub){
+  const rows=mixUse(all);
+  const g=new Map(); rows.forEach(r=>{ const k=r.カウント; if(!g.has(k)) g.set(k,[]); g.get(k).push(r); });
+  const cells=CNT12.map(c=>{ const rs=g.get(c)||[];
+    return `<div class="mixcell${rs.length<8?" few":""}"><div class="mxh"><b>${c}</b><span>${rs.length}球</span></div>${mixBar(rs,{h:18,minlab:20})}</div>`;
+  }).join("");
+  return `<div class="card" style="grid-column:1/-1"><h3>${title} <span class="sub">${sub||"全12カウント（B-S、投球前）・薄いマスは8球未満"}</span>${mixBlankBox(all,rows)}</h3>${mixLegend(rows)}<div class="mixgrid">${cells}</div>${mixWarn(rows)}<div class="mixsec">球種が入っている ${rows.length}球 で計算しています${mixBlank?"（未入力も含む）":(all.length>rows.length?`（未入力の ${all.length-rows.length}球 は除外）`:"")}。</div></div>`;
+}
+function cardMixRun(all,title){
+  const rows=mixUse(all);
+  const line=(k,rs,h,min)=>`<div class="mixrow${rs.length<8?" few":""}"><div class="nm">${esc(k)}</div>${mixBar(rs,{h:h,minlab:min})}<div class="n">${rs.length}球</div></div>`;
+  const a=RUNS.map(k=>line(k,rows.filter(r=>r.走者区分===k),22,12)).join("");
+  const b=RUNS8.map(k=>line(k,rows.filter(r=>r.走者詳細===k),17,18)).join("");
+  return `<div class="card"><h3>${title} <span class="sub">薄い行は8球未満</span></h3>${mixLegend(rows)}${a}<div class="mixsec">走者の位置ごと（全8パターン）</div>${b}</div>`;
+}
+function cardMixRunCount(all,title){
+  const rows=mixUse(all);
+  let h=`<div class="rcgrid"><div></div>${MIXCG.map(c=>`<div class="hh">${c}</div>`).join("")}`;
+  RUNS.forEach(k=>{ h+=`<div class="rl">${esc(k)}</div>`;
+    MIXCG.forEach(c=>{ const rs=rows.filter(r=>r.走者区分===k&&mixCg(r)===c);
+      h+=`<div class="mixcell${rs.length<6?" few":""}"><div class="mxh"><span>${rs.length}球</span></div>${mixBar(rs,{h:16,minlab:24})}</div>`; }); });
+  return `<div class="card"><h3>${title} <span class="sub">走者 × カウントの段階・薄いマスは6球未満</span></h3>${mixLegend(rows)}${h}</div></div>`;
+}
+
 function renderBat(rows,a,label){
   const k=$("#kpis");
   k.innerHTML=[
@@ -948,7 +1050,11 @@ function renderBat(rows,a,label){
     <div class="card tc"><h3>カウント別 <span class="sub">全12カウント（B-S、投球前）</span></h3>${table(colsB,rowsAll(byCnt12,CNT12),{total:a})}</div>
     <div class="card tc"><h3>対戦投手別</h3>${table(colsB,rowsFromGroups(byPit).sort((x,y)=>y.a.n-x.a.n),{})}</div>
     <div class="card tc" style="grid-column:1/-1"><h3>試合別</h3>${table(colsB,rowsFromGroups(byGame).sort((x,y)=>x.label.localeCompare(y.label)),{})}</div>`;
-  $("#body").innerHTML=`<div class="grid g2">${zoneCard}${sprayCard}</div><div class="grid g2">${tables}</div>`;
+  const mixCards=mixTyped(rows)?`
+    ${cardMixCount(rows,"カウント別に来た球種","全12カウント（B-S、投球前）・薄いマスは8球未満")}
+    ${cardMixRun(rows,"走者別に来た球種")}
+    ${cardMixRunCount(rows,"走者 × カウント別に来た球種")}`:cardMixNone(rows.length);
+  $("#body").innerHTML=`<div class="grid g2">${zoneCard}${sprayCard}</div><div class="grid g2">${mixCards}${tables}</div>`;
   $("#hm-bat").addEventListener("change",e=>{ heatMetricBat=e.target.value; render(); });
   $("#sp-foul").addEventListener("change",e=>{ showFoul=e.target.checked; render(); });
 }
@@ -1028,6 +1134,10 @@ function renderPit(rows,a,label){
   gs.pts.forEach(r=>{ const k=r.球種; if(!byTypeCtl.has(k)) byTypeCtl.set(k,{n:0,sx:0,sy:0,same:0,g:0,st:0}); const o=byTypeCtl.get(k); o.n++; o.sx+=r.投球X-r.構えX; o.sy+=r.投球Y-r.構えY; o.same+=r.投球ゾーン===r.構えゾーン?1:0; o.g+=r.gap; o.st+=r.st; });
   const ctlRowsT=Array.from(byTypeCtl.entries()).sort((x,y)=>y[1].n-x[1].n).map(([k,o])=>({label:k,a:o}));
   const ctlCard=`<div class="card tc"><h3>制球の内訳 <span class="sub">球種別・構えゾーン別</span></h3>${table(ctlCols,ctlRowsT.concat(ctlRowsZ),{})}</div>`;
+  const mixCards=mixTyped(rows)?`
+    ${cardMixCount(rows,"カウント別の球種割合")}
+    ${cardMixRun(rows,"走者別の球種割合")}
+    ${cardMixRunCount(rows,"走者 × カウント別の球種割合")}`:cardMixNone(rows.length);
   const tables=`
     <div class="card tc"><h3>球種別</h3>${table(colsP,rowsFromGroups(byType).sort((x,y)=>y.a.n-x.a.n),{total:a})}</div>
     ${ctlCard}
@@ -1037,7 +1147,7 @@ function renderPit(rows,a,label){
     <div class="card tc"><h3>イニング別</h3>${table(colsP,rowsFromGroups(byInn,innOrder),{})}</div>
     <div class="card tc" style="grid-column:1/-1"><h3>試合別</h3>${table(colsP,rowsFromGroups(byGame).sort((x,y)=>x.label.localeCompare(y.label)),{})}</div>
     ${batTeamCards}`;
-  $("#body").innerHTML=`<div class="grid g3">${zoneCard}${gapCard}${sprayCard}</div><div class="grid g2"><div class="card" style="grid-column:1/-1">${staminaCard.replace('<div class="card">','').replace(/<\/div>$/,'')}</div>${tables}</div>`;
+  $("#body").innerHTML=`<div class="grid g3">${zoneCard}${gapCard}${sprayCard}</div><div class="grid g2">${mixCards}<div class="card" style="grid-column:1/-1">${staminaCard.replace('<div class="card">','').replace(/<\/div>$/,'')}</div>${tables}</div>`;
   $("#hm-pit").addEventListener("change",e=>{ heatMetricPit=e.target.value; render(); });
   $("#gap-sel").addEventListener("change",e=>{ gapTarget=e.target.value; render(); });
   $("#gap-svg").addEventListener("click",e=>{ const t=e.target.closest("[data-tz]"); if(!t) return; gapTarget=gapTarget===t.dataset.tz?"":t.dataset.tz; render(); });
@@ -1045,6 +1155,7 @@ function renderPit(rows,a,label){
 }
 
 /* ================= イベント ================= */
+document.addEventListener("change",e=>{ if(e.target&&e.target.id==="mix-blank"){ mixBlank=e.target.checked; render(); } });
 $$(".tab").forEach(b=>b.addEventListener("click",()=>{ MODE=b.dataset.mode; $$(".tab").forEach(x=>x.classList.toggle("on",x===b)); F.sel=""; buildPlayerOptions(); buildFilterOptions(); if(SRC==="api") loadSel(); else render(); }));
 $("#f-sel").addEventListener("change",e=>{ F.sel=e.target.value; if(SRC==="api") loadSel(); else render(); });
 $("#f-team").addEventListener("change",e=>{ F.team=e.target.value; F.sel=""; buildPlayerOptions(); if(SRC==="api") loadSel(); else render(); });
