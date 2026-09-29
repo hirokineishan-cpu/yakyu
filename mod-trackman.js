@@ -372,12 +372,13 @@ export function mount(ROOT, CORE) {
   }
 
   /* ---- 状態 ---- */
-  let view = 'player';
+  let view = 'player';   // データが無いときは取り込み画面から
   let MASTER = null, PITCHERS = [], SESSIONS = [], ROWS = [], SETTINGS = {};
   let loaded = false, busy = false, msg = '', masterFresh = false, fetchedFrom = fiscalStart();
   const F = { from: fiscalStart(), to: '', kind: '', warm: false, type: '', hand: '', player: '', hideTypes: {},
               teamType: 'Fastball', tx: '横変化量', ty: '縦変化量', cmp: {}, cmpMin: '', cmpMax: '', sortKey: '球速', sortDir: -1 };
-  let IMP = null;      // 取り込み中の内容
+  const QUEUE = [];    // 取り込み待ちのファイル
+  let IMPMSG = '';
 
   const pname = pid => { const p = (MASTER && MASTER.players || []).find(x => String(x['選手ID']) === String(pid)); return p ? String(p['氏名']) : String(pid); };
   const phand = pid => { const p = (MASTER && MASTER.players || []).find(x => String(x['選手ID']) === String(pid)); return p ? (String(p['投'] || '右')) : '右'; };
@@ -461,110 +462,118 @@ export function mount(ROOT, CORE) {
   }
   const fmtEst = (s, key, dec, est) => est ? `<td class="n est" title="推定">${num(s, dec)}<small>推</small></td>` : `<td class="n">${num(s, dec)}</td>`;
 
-  /* ================= 画面：取り込み ================= */
-  function viewImport() {
-    const psel = `<select id="tm-pid">${PITCHERS.map(p => `<option value="${esc(p['選手ID'])}" ${String(p['選手ID']) === (IMP ? IMP.pid : F.player) ? 'selected' : ''}>${esc(p['氏名'])}（${esc(phand(p['選手ID']))}投）</option>`).join('')}</select>`;
-    let body = '';
-    if (!IMP) {
-      body = `<div class="drop" id="tm-drop">ここにTrackmanのCSVを放り込む<br><span class="muted" style="font-size:11.5px">またはタップして選ぶ</span>
-        <input type="file" id="tm-file" accept=".csv,text/csv" hidden></div>
-        <div class="note" style="margin-top:10px">対戦（LiveBpPitching）でもブルペン（Pitching）でも同じ列なので、どちらも同じ手順です。中身を読んでから確認画面が出ます。まだ保存はされません。</div>`;
-    } else {
-      const I = IMP, n = I.sel.length;
-      const dates = [...new Set(I.sel.map(r => r._date))].sort();
-      const types = typesIn(I.sel);
-      const hand = phand(I.pid), sides = nums(I.rows, 'リリース横幅'), ms = mean(sides);
-      const expect = (hand === '左' ? -1 : 1) * rhSign();
-      const handWarn = (ms != null && sides.length >= 3 && Math.sign(ms) !== expect);
-      const dup = I.rows.filter(r => r['PlayID'] && ROWS.some(x => x['PlayID'] === r['PlayID'])).length;
-      const filled = I.rows.filter(r => r['補完']).length, spinBad = I.rows.filter(r => r['回転数疑い']).length;
-      const pn = I.recs.map(r => Number(r.PitchNo)).filter(isNum);
-      body = `
-        <div class="card"><h3>${esc(I.name)}<span class="u">${I.recs.length}球を読み込みました</span></h3>
-          <div class="kv">
-            <b>投手</b><span>${psel}</span>
-            <b>種別</b><span><select id="tm-kind"><option ${I.kind === '対戦' ? 'selected' : ''}>対戦</option><option ${I.kind === 'ブルペン' ? 'selected' : ''}>ブルペン</option></select>
-              <span class="muted" style="font-size:11.5px">　CSVの PracticeType から判定（${esc(I.ptype)}）</span></span>
-            <b>日付</b><span>${dates.map(esc).join('、') || '—'}${dates.length > 1 ? ' <span class="pill bad">日付が複数あります</span>' : ''}</span>
-            <b>球番号</b><span>${pn.length ? `<input type="number" id="tm-n1" value="${I.n1}" min="${Math.min(...pn)}" max="${Math.max(...pn)}"> 〜 <input type="number" id="tm-n2" value="${I.n2}" min="${Math.min(...pn)}" max="${Math.max(...pn)}">
-              <span class="muted" style="font-size:11.5px">　1つのCSVに複数の投手が続けて入っているときは、この選手の分だけに絞れます</span>` : '—'}</span>
-            <b>球種</b><span>${types.map(t => `<span class="sw" style="background:${typeColor(t)}"></span>${esc(jtype(t))} <span class="muted">${I.sel.filter(r => String(r['球種']) === t).length}</span>　`).join('')}</span>
-            <b>区分</b><span>Live ${I.sel.filter(r => r['区分'] !== 'Warmup').length}球 / Warmup ${I.sel.filter(r => r['区分'] === 'Warmup').length}球</span>
-          </div>
-          ${handWarn ? `<div class="warn"><b>${esc(pname(I.pid))}</b> は${esc(hand)}投げですが、リリース横幅の平均が ${ms > 0 ? 'プラス' : 'マイナス'}側（${num(ms, 2)} m）で、${hand === '右' ? '左' : '右'}投げの形になっています。
-            <b>選んだ選手が違う</b>可能性がいちばん高いです。選手を選び直してください。機器の左右の向きが逆なのが確かなときだけ、下の「左右を反転」を使ってください。</div>`
-            : (ms != null ? `<div class="ok">投げ手の照合：${esc(hand)}投げ・リリース横幅 ${num(ms, 2)} m で一致しています。</div>` : '')}
-          <div class="kv">
-            <b>軌道から補完</b><span>${filled}球（変化量・角度・コースなど、Trackmanが出していない値を軌道から計算）</span>
-            <b>回転数の疑い</b><span>${spinBad}球 ${spinBad ? '<span class="pill bad">半分の値で記録されている可能性。平均からは外します</span>' : ''}</span>
-            <b>すでに入っている球</b><span>${dup}球 ${dup ? '（同じ PlayID。二重には入りません）' : ''}</span>
-          </div>
-          <label class="c noprint"><input type="checkbox" id="tm-flip" ${I.flip ? 'checked' : ''}> 左右を反転して取り込む（機器の向きが逆だと分かっているときだけ）</label>
-          <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap">
-            <button class="b primary" id="tm-go" ${(!n || handWarn && !I.force) ? 'disabled' : ''}>${n}球を取り込む</button>
-            ${handWarn ? `<button class="b" id="tm-force">警告を無視して取り込む</button>` : ''}
-            <button class="b" id="tm-cancel">やめる</button>
-          </div>
-          ${I.status ? `<div class="note" style="margin-top:8px">${esc(I.status)}</div>` : ''}
-        </div>`;
+  /* ================= 画面：取り込み =================
+     投手が一覧で並び、それぞれの行でCSVを選ぶ（複数可）。最後に「まとめて取り込む」を1回。 */
+  const summarize = q => {
+    const hand = phand(q.pid), sides = nums(q.rows, 'リリース横幅'), ms = mean(sides);
+    const expect = (hand === '左' ? -1 : 1) * rhSign();
+    q.ms = ms; q.handWarn = (ms != null && sides.length >= 3 && Math.sign(ms) !== expect);
+    q.dup = q.rows.filter(r => r['PlayID'] && ROWS.some(x => x['PlayID'] === r['PlayID'])).length;
+    q.filled = q.rows.filter(r => r['補完']).length; q.spinBad = q.rows.filter(r => r['回転数疑い']).length;
+    q.dates = [...new Set(q.rows.map(r => r['測定日']))].sort();
+  };
+  function buildQ(q) {
+    const exts = q.recs.map(r => Number(r.Extension)).filter(isNum);
+    const extFallback = exts.length ? median(exts) : 1.75;
+    const first = q.recs.map(r => normDate(r.Date)).filter(Boolean).sort()[0] || today();
+    q.sid = q.sid || uid('ts-'); q.date = first;
+    q.rows = q.recs.map(r => toRow(r, { pid: q.pid, sid: q.sid, kind: q.kind, flip: q.flip, extFallback, date: normDate(r.Date) || first }));
+    flagSpin(q.rows); summarize(q);
+  }
+  async function addFiles(pid, files) {
+    for (const file of files) {
+      let text = ''; try { text = await file.text(); } catch (e) { continue; }
+      const recs = parseCSV(text);
+      if (!recs.length || !('PitchNo' in recs[0]) || !('RelSpeed' in recs[0])) { msg = `${file.name}：TrackmanのCSVではないようです（PitchNo や RelSpeed の列がありません）`; continue; }
+      const pt = recs.map(r => r.PracticeType).filter(Boolean);
+      const ptype = pt.sort((a, b) => pt.filter(x => x === b).length - pt.filter(x => x === a).length)[0] || '';
+      const q = { id: uid('q-'), pid, name: file.name, recs, ptype, kind: KIND_OF(ptype), flip: false, force: false, status: '' };
+      buildQ(q); QUEUE.push(q);
     }
+    render();
+  }
+  function viewImport() {
+    const pending = QUEUE.filter(q => !q.done);
+    const ready = pending.filter(q => !q.handWarn || q.force);
+    const rowsFor = pid => QUEUE.filter(q => q.pid === pid);
+    const qHtml = q => {
+      const hand = phand(q.pid);
+      return `<div style="margin:8px 0 0 12px; padding:8px 10px; background:var(--raise); border-radius:8px; ${q.done ? 'opacity:.6' : ''}">
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+          <b style="font-size:13px">${esc(q.name)}</b>
+          <span class="muted">${q.rows.length}球</span>
+          <span class="muted">${q.dates.join('、')}${q.dates.length > 1 ? ' <span class="pill bad">日付が複数</span>' : ''}</span>
+          ${q.done ? `<span class="pill live">${esc(q.status)}</span>` : `<select data-qkind="${q.id}"><option ${q.kind === '対戦' ? 'selected' : ''}>対戦</option><option ${q.kind === 'ブルペン' ? 'selected' : ''}>ブルペン</option></select>
+          <button class="b" data-qdel="${q.id}" style="padding:3px 9px;font-size:12px">外す</button>`}
+        </div>
+        <div class="muted" style="font-size:11.5px; margin-top:4px">
+          ${q.ms != null ? (q.handWarn ? `<span class="pill bad">${esc(hand)}投げの選手に${hand === '右' ? '左' : '右'}投げの形のデータ（リリース横幅 ${num(q.ms, 2)} m）</span> 選手が違う可能性が高いです。`
+                                       : `投げ手 一致（${esc(hand)}投・${num(q.ms, 2)} m）`) : '投げ手 判定できず'}
+          　軌道から補完 ${q.filled}球　回転数の疑い ${q.spinBad}球${q.dup ? `　<b>すでに入っている ${q.dup}球</b>（飛ばします）` : ''}
+          ${q.status && !q.done ? `　<b style="color:var(--accent)">${esc(q.status)}</b>` : ''}
+        </div>
+        ${q.handWarn && !q.done ? `<div class="noprint" style="margin-top:4px"><label class="c"><input type="checkbox" data-qforce="${q.id}" ${q.force ? 'checked' : ''}> それでも取り込む</label>　<label class="c"><input type="checkbox" data-qflip="${q.id}" ${q.flip ? 'checked' : ''}> 左右を反転して取り込む（機器の向きが逆だと分かっているときだけ）</label></div>` : ''}
+      </div>`;
+    };
+    const table = `<div class="card"><h3>投手ごとにCSVを選ぶ<span class="u">1つのCSVは1人分。複数のファイルをまとめて選べます</span></h3>
+      ${PITCHERS.map(p => { const pid = String(p['選手ID']); const qs = rowsFor(pid);
+          return `<div style="border-top:1px solid var(--line); padding:9px 0">
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+              <b style="font-size:14px">${esc(p['氏名'])}</b><span class="muted">${esc(phand(pid))}投</span>
+              <span class="muted" style="font-size:12px">${qs.length ? `${qs.length}ファイル・${qs.reduce((n, q) => n + q.rows.length, 0)}球` : 'まだ選んでいません'}</span>
+              <button class="b" data-pick="${esc(pid)}" style="margin-left:auto">CSVを選ぶ</button><input type="file" accept=".csv,text/csv" multiple hidden data-pidfile="${esc(pid)}">
+            </div>
+            ${qs.map(qHtml).join('')}
+          </div>`; }).join('')}
+      <div class="note">対戦（LiveBpPitching）もブルペン（Pitching）も同じ列なので、どちらも同じ手順です。ここで選んだだけでは保存されません。下の「まとめて取り込む」を押すと、上から順に保存します。</div>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px">
+        <button class="b primary" id="tm-goall" ${(!ready.length || busy) ? 'disabled' : ''}>${ready.length ? `${ready.length}ファイル・${ready.reduce((s, q) => s + q.rows.length, 0)}球をまとめて取り込む` : 'まとめて取り込む'}</button>
+        ${pending.length - ready.length ? `<span class="muted" style="font-size:12px">警告のある${pending.length - ready.length}ファイルは、「それでも取り込む」に印を付けない限り飛ばします</span>` : ''}
+        ${QUEUE.some(q => q.done) ? `<button class="b" id="tm-clear">済んだ分を消す</button>` : ''}
+      </div>
+      ${IMPMSG ? `<div class="ok" style="margin-top:10px">${esc(IMPMSG)}</div>` : ''}
+    </div>`;
     const sess = SESSIONS.slice().sort((a, b) => String(b['取り込み日時']).localeCompare(String(a['取り込み日時']))).slice(0, 30);
-    return `<div class="card"><h3>CSVを取り込む</h3>${body}</div>
-      <div class="card"><h3>取り込み済み<span class="u">新しい順・最近30件</span></h3>
+    return table + `<div class="card"><h3>取り込み済み<span class="u">新しい順・最近30件</span></h3>
         ${sess.length ? `<div class="tw"><table><tr><th>測定日</th><th>投手</th><th>種別</th><th class="n">球数</th><th>取り込み</th><th>ファイル</th><th></th></tr>
         ${sess.map(s => `<tr><td>${esc(s['測定日'])}</td><td>${esc(pname(s['投手ID']))}</td><td>${esc(s['種別'])}</td><td class="n">${esc(s['球数'])}</td>
           <td class="muted">${esc(String(s['取り込み日時']).slice(0, 16))} ${esc(s['記録者'])}</td><td class="muted">${esc(s['ファイル名'])}</td>
           <td>${isAdmin() ? `<button class="b danger" data-delsess="${esc(s['セッションID'])}" style="padding:3px 9px;font-size:12px">削除</button>` : ''}</td></tr>`).join('')}</table></div>`
         : '<div class="empty">まだ取り込んでいません</div>'}</div>`;
   }
-
-  async function readFile(file) {
-    const text = await file.text();
-    const recs = parseCSV(text);
-    if (!recs.length || !('PitchNo' in recs[0]) || !('RelSpeed' in recs[0])) { msg = 'TrackmanのCSVではないようです（PitchNo や RelSpeed の列がありません）'; render(); return; }
-    const pt = recs.map(r => r.PracticeType).filter(Boolean);
-    const ptype = pt.sort((a, b) => pt.filter(x => x === b).length - pt.filter(x => x === a).length)[0] || '';
-    const pn = recs.map(r => Number(r.PitchNo)).filter(isNum);
-    IMP = { name: file.name, recs, pid: F.player || (PITCHERS[0] && String(PITCHERS[0]['選手ID'])) || '', kind: KIND_OF(ptype), ptype,
-            n1: pn.length ? Math.min(...pn) : 0, n2: pn.length ? Math.max(...pn) : 0, flip: false, force: false, status: '' };
-    buildImport(); msg = ''; render();
-  }
-  function buildImport() {
-    const I = IMP;
-    I.sel = I.recs.filter(r => { const n = Number(r.PitchNo); return !isNum(n) || (n >= I.n1 && n <= I.n2); });
-    I.sel.forEach(r => r._date = normDate(r.Date));
-    const exts = I.sel.map(r => Number(r.Extension)).filter(isNum);
-    const extFallback = exts.length ? median(exts) : 1.75;
-    const first = I.sel.map(r => r._date).filter(Boolean).sort()[0] || today();
-    I.sid = I.sid || uid('ts-');
-    I.rows = I.sel.map(r => toRow(r, { pid: I.pid, sid: I.sid, kind: I.kind, flip: I.flip, extFallback, date: r._date || first }));
-    // 保存する行の球種は選手が同じなので、まとめて回転数の疑いを判定
-    I.sel.forEach((r, i) => { I.rows[i]['球種'] = String(r.TaggedPitchType || ''); });
-    flagSpin(I.rows);
-    I.date = first;
-  }
-  async function doImport() {
-    const I = IMP; if (!I || !I.rows.length) return;
-    const rows = I.rows.filter(r => !(r['PlayID'] && ROWS.some(x => x['PlayID'] === r['PlayID'])));
-    busy = true; I.status = '保存しています…'; render();
-    try {
-      const s = await api('upsertTmSession', { row: { 'セッションID': I.sid, '投手ID': I.pid, '測定日': I.date, '種別': I.kind, '球数': rows.length,
-        'ファイル名': I.name, '備考': I.flip ? '左右反転' : '' } });
-      if (!s.ok) throw new Error(s.error || 'セッションを保存できませんでした');
-      let added = 0, skipped = 0;
-      for (let i = 0; i < rows.length; i += 200) {
-        const j = await api('upsertTmPitches', { rows: rows.slice(i, i + 200) });
-        if (!j.ok) throw new Error(j.error || '投球を保存できませんでした');
-        added += j.added || 0; skipped += j.skipped || 0;
-        I.status = `保存しています… ${Math.min(i + 200, rows.length)} / ${rows.length}`; render();
-      }
-      const who = pname(I.pid);
-      IMP = null; busy = false;
-      msg = `${who} ${I.date} ${I.kind}：${added}球を取り込みました${skipped ? `（${skipped}球は入っていたので飛ばしました）` : ''}`;
-      F.player = I.pid;
-      await load(I.date < fetchedFrom ? I.date : undefined);
-      render(); setTimeout(() => { msg = ''; render(); }, 6000);
-    } catch (e) { busy = false; I.status = ''; msg = String(e.message || e); render(); }
+  async function importAll() {
+    const todo = QUEUE.filter(q => !q.done && (!q.handWarn || q.force));
+    if (!todo.length) return;
+    busy = true; IMPMSG = ''; render();
+    let okN = 0, ballN = 0, skipN = 0, earliest = null; const errs = [];
+    for (const q of todo) {
+      try {
+        const rows = q.rows.filter(r => !(r['PlayID'] && ROWS.some(x => x['PlayID'] === r['PlayID'])));
+        if (!rows.length) { q.done = true; q.status = 'すべて入っていました'; okN++; skipN += q.rows.length; render(); continue; }
+        q.status = '保存中…'; render();
+        const s = await api('upsertTmSession', { row: { 'セッションID': q.sid, '投手ID': q.pid, '測定日': q.date, '種別': q.kind, '球数': rows.length,
+          'ファイル名': q.name, '備考': q.flip ? '左右反転' : '' } });
+        if (!s.ok) throw new Error(s.error || 'セッションを保存できませんでした');
+        let added = 0, skipped = 0;
+        for (let i = 0; i < rows.length; i += 200) {
+          const j = await api('upsertTmPitches', { rows: rows.slice(i, i + 200) });
+          if (!j.ok) throw new Error(j.error || '投球を保存できませんでした');
+          added += j.added || 0; skipped += j.skipped || 0;
+          q.status = `保存中… ${Math.min(i + 200, rows.length)} / ${rows.length}`; render();
+        }
+        // 次のファイルの重複判定のために、いま入れた球を手元にも足しておく
+        rows.forEach(r => ROWS.push(r));
+        q.done = true; q.status = `${added}球 取り込み済み${skipped ? `（${skipped}球は入っていた）` : ''}`;
+        okN++; ballN += added; skipN += skipped;
+        if (!earliest || q.date < earliest) earliest = q.date;
+      } catch (e) { q.status = ''; errs.push(`${q.name}：${String(e.message || e)}`); }
+      render();
+    }
+    busy = false;
+    IMPMSG = `${okN}ファイル・${ballN}球を取り込みました${skipN ? `（${skipN}球はすでに入っていたので飛ばしました）` : ''}`;
+    msg = errs.length ? errs.join(' / ') : '';
+    await load(earliest && earliest < fetchedFrom ? earliest : undefined);
+    render();
   }
 
   /* ================= 画面：個人 ================= */
@@ -732,19 +741,19 @@ export function mount(ROOT, CORE) {
       try { const j = await api('deleteTmSession', { id: ds.dataset.delsess }); if (!j.ok) throw new Error(j.error || '削除できませんでした'); msg = `削除しました（${j.pitches}球）`; busy = false; await load(); render(); setTimeout(() => { msg = ''; render(); }, 5000); }
       catch (err) { busy = false; msg = String(err.message || err); render(); } return; }
     if (e.target.id === 'tm-reload' || e.target.id === 'tm-refresh') { masterFresh = false; load(); return; }
-    if (e.target.id === 'tm-drop' || e.target.closest('#tm-drop')) { const i = $('#tm-file'); if (i) i.click(); return; }
-    if (e.target.id === 'tm-cancel') { IMP = null; render(); return; }
-    if (e.target.id === 'tm-force') { IMP.force = true; render(); return; }
-    if (e.target.id === 'tm-go') { await doImport(); return; }
+    const pk = e.target.closest('[data-pick]'); if (pk) { const i = ROOT.querySelector(`input[data-pidfile="${pk.dataset.pick}"]`); if (i) i.click(); return; }
+    const qd = e.target.closest('[data-qdel]'); if (qd) { const k = QUEUE.findIndex(q => q.id === qd.dataset.qdel); if (k >= 0) QUEUE.splice(k, 1); render(); return; }
+    if (e.target.id === 'tm-clear') { for (let k = QUEUE.length - 1; k >= 0; k--) if (QUEUE[k].done) QUEUE.splice(k, 1); IMPMSG = ''; render(); return; }
+    if (e.target.id === 'tm-goall') { await importAll(); return; }
     if (e.target.id === 'tm-print') { document.documentElement.classList.add('prt'); setTimeout(() => { window.print(); setTimeout(() => document.documentElement.classList.remove('prt'), 400); }, 60); return; }
   });
   ROOT.addEventListener('change', e => {
     const id = e.target.id, val = e.target.value;
-    if (id === 'tm-file' && e.target.files && e.target.files[0]) { readFile(e.target.files[0]); return; }
-    if (id === 'tm-pid') { if (IMP) { IMP.pid = val; IMP.force = false; buildImport(); } else F.player = val; render(); return; }
-    if (id === 'tm-kind') { IMP.kind = val; buildImport(); render(); return; }
-    if (id === 'tm-n1' || id === 'tm-n2') { IMP[id === 'tm-n1' ? 'n1' : 'n2'] = Number(val); buildImport(); render(); return; }
-    if (id === 'tm-flip') { IMP.flip = e.target.checked; buildImport(); render(); return; }
+    const pf = e.target.dataset && e.target.dataset.pidfile;
+    if (pf && e.target.files && e.target.files.length) { const files = [...e.target.files]; e.target.value = ''; addFiles(pf, files); return; }
+    const qk = e.target.dataset && e.target.dataset.qkind; if (qk) { const q = QUEUE.find(x => x.id === qk); if (q) { q.kind = val; buildQ(q); } render(); return; }
+    const qf = e.target.dataset && e.target.dataset.qforce; if (qf) { const q = QUEUE.find(x => x.id === qf); if (q) q.force = e.target.checked; render(); return; }
+    const ql = e.target.dataset && e.target.dataset.qflip; if (ql) { const q = QUEUE.find(x => x.id === ql); if (q) { q.flip = e.target.checked; buildQ(q); } render(); return; }
     if (id === 'tm-player') { F.player = val; render(); return; }
     if (id === 'tm-from') { F.from = val; if (val && val < fetchedFrom) load(val); else render(); return; }
     if (id === 'tm-to') { F.to = val; render(); return; }
@@ -757,13 +766,10 @@ export function mount(ROOT, CORE) {
     if (id === 'tm-cmin') { F.cmpMin = val; render(); return; }
     if (id === 'tm-cmax') { F.cmpMax = val; render(); return; }
   });
-  ['dragenter', 'dragover'].forEach(ev => ROOT.addEventListener(ev, e => { const d = e.target.closest('#tm-drop'); if (d) { e.preventDefault(); d.classList.add('over'); } }));
-  ROOT.addEventListener('dragleave', e => { const d = e.target.closest('#tm-drop'); if (d) d.classList.remove('over'); });
-  ROOT.addEventListener('drop', e => { const d = e.target.closest('#tm-drop'); if (!d) return; e.preventDefault(); d.classList.remove('over');
-    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) readFile(f); });
 
   ROOT.addEventListener('hsp:show', () => { if (!loaded && !busy) load(); });
   warmStart();
+  if (!ROWS.length) view = 'in';
   render();
   load();
 }
