@@ -119,7 +119,8 @@ function judge(item, val, ctx) {
     const s = veloStandard(item, ctx && ctx.target);
     if (!s) return null;
     if (s.out) return { cls: 'na', txt: '基準の外', hint: `目標球速 ${s.lo}〜${s.hi} の範囲で判定します` };
-    return val >= s.val ? ok(`必要 ${s.val.toFixed(1)}`) : ng(`必要 ${s.val.toFixed(1)}`);
+    const need = s.val.toFixed(Number(item['小数桁'] || 0));   // 項目の小数桁に合わせる
+    return val >= s.val ? ok(`必要 ${need}`) : ng(`必要 ${need}`);
   }
   return null;
   function ok(h) { return { cls: 'ok', txt: '達成', hint: h }; }
