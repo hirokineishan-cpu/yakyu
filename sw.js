@@ -3,14 +3,15 @@
 // 方針：アプリ本体は「保存してあるものをすぐ出す。裏で新しいものを取りに行って
 // 次回に備える」。毎回ネットを待たないので、開いた瞬間に出る。
 // そのぶん、更新は「次に開いたとき」に反映される（開き直せば入る）。
-const CACHE = "hsp-s2-aomoriyamada-v3";
+const CACHE = "hsp-s2-aomoriyamada-v4";
 const SHELL = ["./", "./index.html", "./mod-record.js", "./mod-analysis.js", "./mod-physical.js",
                "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {
   // 1つ落とせなくても残りは入れる（部品が増えたときに全滅させない）
   e.waitUntil(caches.open(CACHE)
-    .then(c => Promise.all(SHELL.map(u => c.add(u).catch(() => {}))))
+    .then(c => Promise.all(SHELL.map(u =>
+      c.add(new Request(u, { cache: "reload" })).catch(() => c.add(u).catch(() => {})))))
     .then(() => self.skipWaiting()));
 });
 

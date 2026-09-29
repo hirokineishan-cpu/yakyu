@@ -243,6 +243,15 @@ try { const v = localStorage.getItem(TABKEY); if (v && FILES[v]) first = v; } ca
 show(first);
 
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  /* 新しい版が入ったとき、これまでは「もう一度開き直す」まで古い画面のままだった。
+     開いた直後（20秒以内）に入れ替わったときだけ、こちらで1回だけ読み直す。
+     試合中など、しばらく使ってからの入れ替わりでは何もしない（次に開いたときに入る）。*/
+  const had = !!navigator.serviceWorker.controller;
+  let once = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!had || once || performance.now() > 20000) return;
+    once = true; location.reload();
+  });
   navigator.serviceWorker.register("./sw.js").catch(()=>{});
 }
 </script>
