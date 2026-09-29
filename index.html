@@ -8,6 +8,25 @@
 <meta name="theme-color" content="#1f4e36">
 <meta name="robots" content="noindex, nofollow, noarchive">
 <title>野球記録</title>
+<!-- 起動を早くするための2つ。
+     ・前回開いていたタブの部品を、この時点で取りに行かせる（外枠の解析を待たない）
+     ・スプレッドシートとの接続も先に張っておく（最初の通信が速くなる） -->
+<script>
+(function () {
+  var t = '';
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf('hsp-tab-') === 0) { t = localStorage.getItem(k) || ''; break; }
+    }
+  } catch (e) {}
+  var f = { analysis: 'analysis', physical: 'physical' }[t] || 'record';
+  var l = document.createElement('link');
+  l.rel = 'modulepreload'; l.href = './mod-' + f + '.js';
+  document.head.appendChild(l);
+})();
+</script>
+<link rel="preconnect" href="https://script.google.com" crossorigin>
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./icon-192.png">
 <link rel="icon" href="./icon-192.png">

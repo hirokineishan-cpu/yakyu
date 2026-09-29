@@ -1,5 +1,9 @@
 // 野球記録 service worker — アプリ本体を端末に保存し、圏外でも起動できるようにする
-const CACHE = "hsp-s2-aomoriyamada-t-v1";
+//
+// 方針：アプリ本体は「保存してあるものをすぐ出す。裏で新しいものを取りに行って
+// 次回に備える」。毎回ネットを待たないので、開いた瞬間に出る。
+// そのぶん、更新は「次に開いたとき」に反映される（開き直せば入る）。
+const CACHE = "hsp-s2-aomoriyamada-v2";
 const SHELL = ["./", "./index.html", "./mod-record.js", "./mod-analysis.js", "./mod-physical.js",
                "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
@@ -16,25 +20,27 @@ self.addEventListener("activate", e => {
     .then(() => self.clients.claim()));
 });
 
+// 裏でこっそり取り直して、次回のために保存しておく
+function refresh(req, cache) {
+  return fetch(req).then(res => {
+    if (res && res.ok) cache.put(req, res.clone());
+    return res;
+  }).catch(() => null);
+}
+
 self.addEventListener("fetch", e => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET") return;                        // API送信はそのまま
   if (url.hostname.includes("script.google.com") || url.hostname.includes("googleusercontent.com")) return;
 
   if (url.origin === location.origin) {
-    // アプリ本体：ネットワーク優先、落ちたらキャッシュ。
-    // 画面の読み込みだけ index.html に逃がす（部品にHTMLを返すと壊れるため）。
-    e.respondWith(
-      fetch(e.request).then(r => {
-        const copy = r.clone();
-        caches.open(CACHE).then(c => c.put(e.request, copy));
-        return r;
-      }).catch(() => caches.match(e.request, { ignoreSearch: true }).then(r => {
-        if (r) return r;
-        if (e.request.mode === "navigate") return caches.match("./index.html");
-        return new Response("", { status: 504 });
-      }))
-    );
+    e.respondWith(caches.open(CACHE).then(cache =>
+      cache.match(e.request, { ignoreSearch: true }).then(hit => {
+        if (hit) { e.waitUntil(refresh(e.request, cache)); return hit; }   // 保存済みを即返す
+        return refresh(e.request, cache).then(res => res ||
+          (e.request.mode === "navigate" ? cache.match("./index.html") : new Response("", { status: 504 })));
+      })
+    ));
     return;
   }
   // フォントなど外部：キャッシュ優先
