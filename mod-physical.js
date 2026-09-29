@@ -187,29 +187,80 @@ export function mount(ROOT, CORE) {
   let selItem = '', selPlayer = '', selDate = today();
   let draft = {};           // 入力中の値  key: pid|itemId|side
   let loaded = false, busy = false, msg = '';
+  let masterFresh = false;
+
+  /* ---- 端末に残っているもの（先に見せるためだけ） ---- */
+  const DBKEY = 'hsp-v3-' + CFG.TEAM_ID + CFG.STORE;   // 「記録」が持っている名簿
+  const PHKEY = 'hsp-ph-' + CFG.TEAM_ID + CFG.STORE;   // 前回の計測データ
+
+  function masterFromLocal() {
+    let db = null;
+    try { db = JSON.parse(localStorage.getItem(DBKEY) || 'null'); } catch (e) {}
+    if (!db || !db.teams) return null;
+    const teams = [], players = [];
+    Object.keys(db.teams).forEach(k => {
+      const t = db.teams[k]; if (!t) return;
+      teams.push({ 'チームID': t.tid, 'チーム名': t.name, '自チーム': t.mine ? 1 : '' });
+      (t.players || []).forEach((p, i) => players.push({
+        '選手ID': p.pid, '氏名': p.name, 'チームID': t.tid,
+        '打': p.bats || '', '投': p.throws || '', '投手': p.isP ? 1 : '',
+        '状態': p.state || '', '備考': p.mergedTo ? '統合先:' + p.mergedTo : '',
+        '順': (p.ord != null ? p.ord : i)
+      }));
+    });
+    return teams.length ? { teams: teams, players: players } : null;
+  }
+
+  function applyMaster(m) {
+    MASTER = m;
+    const mineTeam = (MASTER.teams || []).find(t => String(t['自チーム']) === '1');
+    const tid = mineTeam ? String(mineTeam['チームID']) : '';
+    PITCHERS = (MASTER.players || [])
+      .filter(x => String(x['チームID']) === tid && String(x['投手']) === '1'
+                && String(x['状態'] || '') !== '退部' && !String(x['備考'] || '').startsWith('統合先:'))
+      .sort((a, b) => Number(a['順'] || 0) - Number(b['順'] || 0));
+    if (PITCHERS.length && !PITCHERS.some(p => String(p['選手ID']) === selPlayer))
+      selPlayer = String(PITCHERS[0]['選手ID']);
+  }
+
+  function applyPhys(p) {
+    ITEMS = (p.items || []).slice().sort((a, b) => Number(a['順'] || 0) - Number(b['順'] || 0));
+    ROWS = p.rows || [];
+    if (!selItem && ITEMS.length) {
+      const f = ITEMS.find(i => i['入力種別'] === '実測') || ITEMS[0];
+      selItem = String(f['項目ID']);
+    }
+  }
 
   /* ---- 取得 ---- */
+  function warmStart() {          // 通信を待たずに、まず前回の内容を出す
+    if (loaded) return;
+    const lm = masterFromLocal(); if (lm) applyMaster(lm);
+    let c = null; try { c = JSON.parse(localStorage.getItem(PHKEY) || 'null'); } catch (e) {}
+    if (c && c.items && c.items.length) applyPhys(c);
+    if (MASTER && ITEMS.length) loaded = true;
+  }
+
   async function load() {
-    busy = true; render();
+    busy = true; if (!loaded) render();
+    const before = loaded ? JSON.stringify({ i: ITEMS, r: ROWS, p: PITCHERS }) : '';
     try {
-      if (!MASTER) {
-        const m = await api('getMaster');
+      const [m, p] = await Promise.all([
+        masterFresh ? null : api('getMaster'),
+        api('getPhysical', {})
+      ]);
+      if (m) {
         if (!m.ok) throw new Error(m.error || 'マスタを取れませんでした');
-        MASTER = m.master;
+        applyMaster(m.master); masterFresh = true;
       }
-      const p = await api('getPhysical', {});
       if (!p.ok) throw new Error(p.error || 'フィジカルのデータを取れませんでした');
-      ITEMS = (p.items || []).slice().sort((a, b) => Number(a['順'] || 0) - Number(b['順'] || 0));
-      ROWS = p.rows || [];
-      const mineTeam = (MASTER.teams || []).find(t => String(t['自チーム']) === '1');
-      const tid = mineTeam ? String(mineTeam['チームID']) : '';
-      PITCHERS = (MASTER.players || [])
-        .filter(x => String(x['チームID']) === tid && String(x['投手']) === '1'
-                  && String(x['状態'] || '') !== '退部' && !String(x['備考'] || '').startsWith('統合先:'))
-        .sort((a, b) => Number(a['順'] || 0) - Number(b['順'] || 0));
-      if (!selItem && ITEMS.length) selItem = String(ITEMS.find(i => i['入力種別'] === '実測')['項目ID']);
-      if (!selPlayer && PITCHERS.length) selPlayer = String(PITCHERS[0]['選手ID']);
+      applyPhys(p);
+      try { localStorage.setItem(PHKEY, JSON.stringify({ items: ITEMS, rows: ROWS })); } catch (e) {}
+      const same = before && before === JSON.stringify({ i: ITEMS, r: ROWS, p: PITCHERS });
       loaded = true; msg = '';
+      busy = false;
+      if (!same) render();          // 内容が同じなら描き直さない（スクロールや入力を邪魔しない）
+      return;
     } catch (e) {
       msg = String(e.message || e);
     }
@@ -447,6 +498,7 @@ export function mount(ROOT, CORE) {
 
   /* ================= 描画 ================= */
   function render() {
+    const sy = window.scrollY;
     const tabs = [['in', '入力'], ['item', '種目別'], ['player', '選手別']];
     const body = !loaded
       ? (busy ? '<div class="empty">読み込んでいます…</div>'
@@ -464,6 +516,7 @@ export function mount(ROOT, CORE) {
       </div>
       ${msg && loaded ? `<div class="note" style="color:var(--clay)">${esc(msg)}</div>` : ''}
       ${body}</div>`;
+    if (sy) window.scrollTo(0, sy);
   }
 
   /* ================= 操作 ================= */
@@ -472,7 +525,7 @@ export function mount(ROOT, CORE) {
     if (v) { view = v.dataset.v; render(); return; }
     const g = e.target.closest('[data-goto]');
     if (g) { e.preventDefault(); selPlayer = g.dataset.goto; view = 'player'; render(); return; }
-    if (e.target.id === 'ph-reload' || e.target.id === 'ph-refresh') { MASTER = null; load(); return; }
+    if (e.target.id === 'ph-reload' || e.target.id === 'ph-refresh') { masterFresh = false; load(); return; }
     if (e.target.id === 'ph-clear') { draft = {}; render(); return; }
     if (e.target.id === 'ph-print') {
       document.documentElement.classList.add('prt');
@@ -520,9 +573,10 @@ export function mount(ROOT, CORE) {
     try {
       const j = await api('upsertMeasures', { rows });
       if (!j.ok) throw new Error(j.error || '保存できませんでした');
-      draft = {}; msg = `保存しました（追加${j.added || 0} / 更新${j.updated || 0}${j.removed ? ' / 削除' + j.removed : ''}）`;
-      busy = false;
+      draft = {}; busy = false;
       await load();
+      msg = `保存しました（追加${j.added || 0} / 更新${j.updated || 0}${j.removed ? ' / 削除' + j.removed : ''}）`;
+      render();
       setTimeout(() => { msg = ''; render(); }, 4000);
     } catch (e) {
       msg = String(e.message || e); busy = false; render();
@@ -530,6 +584,7 @@ export function mount(ROOT, CORE) {
   }
 
   ROOT.addEventListener('hsp:show', () => { if (!loaded && !busy) load(); });
+  warmStart();
   render();
   load();
 }

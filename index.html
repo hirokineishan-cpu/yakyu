@@ -117,7 +117,9 @@ html.prt,html.prt[data-theme="dark"]{ color-scheme:light;
 
 /* ==== 外枠 ==== */
 :root{ --barH:44px }
-body{ overflow:hidden }
+/* 記録タブだけは画面ぴったりの固定レイアウト（自分で中身をスクロールさせる）。
+   解析・フィジカルは普通に画面ごとスクロールさせる。 */
+body.t-record{ overflow:hidden }
 #bar{
   position:fixed; top:0; left:0; right:0; height:var(--barH); z-index:300;
   display:flex; align-items:stretch; gap:0;
@@ -157,11 +159,11 @@ main > section[hidden]{ display:none !important }
 @media print{
   #bar{ display:none !important }
   main{ margin-top:0 !important }
-  body{ overflow:visible }
+  body.t-record{ overflow:visible }
 }
 html.prt #bar{ display:none !important }
 html.prt main{ margin-top:0 !important }
-html.prt body{ overflow:visible }
+html.prt body.t-record{ overflow:visible }
 </style>
 </head>
 <body>
@@ -205,6 +207,7 @@ if (CFG.TEAM_NAME) document.getElementById('bar-team').textContent = CFG.TEAM_NA
 async function show(key){
   const sections = document.querySelectorAll('main > section');
   sections.forEach(s => { s.hidden = (s.id !== 'tab-' + key); });
+  document.body.classList.toggle('t-record', key === 'record');
   document.querySelectorAll('#bar button').forEach(b => {
     b.setAttribute('aria-selected', String(b.dataset.tab === key));
   });
