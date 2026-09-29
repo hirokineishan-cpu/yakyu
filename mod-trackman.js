@@ -55,7 +55,7 @@ const CSS = `
 #tab-trackman .grid3{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px }
 #tab-trackman svg.ch{ display:block; width:100%; height:auto; font-family:var(--jp) }
 #tab-trackman svg.ch text{ font-size:10px; fill:var(--muted) }
-#tab-trackman svg.ch .ax{ stroke:var(--line); stroke-width:1 }
+#tab-trackman svg.ch .ax{ stroke:color-mix(in srgb, var(--line) 45%, transparent); stroke-width:.8 }
 #tab-trackman svg.ch .ax0{ stroke:var(--ink2); stroke-width:1; opacity:.5 }
 #tab-trackman svg.ch .zone{ fill:none; stroke:var(--ink2); stroke-width:1.2 }
 #tab-trackman svg.ch .lab{ font-size:11px; fill:var(--ink2); font-weight:600 }
@@ -107,6 +107,12 @@ const TYPE_COLOR = { Fastball: 'var(--t8)', TwoSeamFastBall: 'var(--t2)', Sinker
   Slider: 'var(--t4)', Curveball: 'var(--t1)', ChangeUp: 'var(--t3)', Splitter: 'var(--t5)', Knuckleball: 'var(--t6)', Other: 'var(--t0)', '': 'var(--t0)' };
 const TYPE_ORDER = ['Fastball', 'TwoSeamFastBall', 'Sinker', 'Cutter', 'Slider', 'Curveball', 'ChangeUp', 'Splitter', 'Knuckleball', 'Other', ''];
 const typeColor = t => TYPE_COLOR[t] || 'var(--t0)';
+/* 球速比（その投手のストレート平均 = 100%）で色の濃さを変える。70%で薄く、100%以上で最も濃い */
+const shade = (color, ratio) => { if (!isNum(ratio)) return color;
+  const pct = Math.round(Math.max(28, Math.min(100, 28 + (Number(ratio) - 0.70) / 0.30 * 72)));
+  return `color-mix(in srgb, ${color} ${pct}%, var(--paper))`; };
+const veloRef = rows => { const fb = rows.filter(r => r['球種'] === 'Fastball' && isNum(r['球速'])).map(r => Number(r['球速']));
+  if (fb.length) return mean(fb); const all = rows.filter(r => isNum(r['球速'])).map(r => Number(r['球速'])); return all.length ? Math.max(...all) : null; };
 const HAND_COLOR = { '右': 'var(--accent)', '左': 'var(--clay)' };
 
 /* ================= CSV ================= */
@@ -277,10 +283,18 @@ function scatter(opts) {
     if (!isNum(p.x) || !isNum(p.y)) return;
     const x = X(Math.max(xa, Math.min(xb, p.x))), y = Y(Math.max(ya, Math.min(yb, p.y)));
     const r = p.r || 3.2;
-    s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${p.c}" opacity="${p.o != null ? p.o : .75}" ${p.stroke ? `stroke="${p.stroke}" stroke-width="1.5"` : ''}><title>${esc(p.t || '')}</title></circle>`;
+    if (p.hollow) s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="var(--paper)" stroke="${p.c}" stroke-width="1.4" opacity="${p.o != null ? p.o : .9}"><title>${esc(p.t || '')}</title></circle>`;
+    else s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${p.c}" opacity="${p.o != null ? p.o : .85}" ${p.stroke ? `stroke="${p.stroke}" stroke-width="1.5"` : ''}><title>${esc(p.t || '')}</title></circle>`;
     if (p.label) s += x > w * 0.78
       ? `<text class="lab" x="${(x - r - 2).toFixed(1)}" y="${(y + 3).toFixed(1)}" text-anchor="end">${esc(p.label)}</text>`
       : `<text class="lab" x="${(x + r + 2).toFixed(1)}" y="${(y + 3).toFixed(1)}">${esc(p.label)}</text>`;
+  });
+  (opts.means || []).forEach(m => {
+    if (!isNum(m.x) || !isNum(m.y)) return;
+    const x = X(Math.max(xa, Math.min(xb, m.x))), y = Y(Math.max(ya, Math.min(yb, m.y)));
+    s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="7" fill="${m.c}" stroke="var(--paper)" stroke-width="2.5"><title>${esc(m.t || '')}</title></circle>`
+       + `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="8.5" fill="none" stroke="${m.c}" stroke-width="1.2"/>`;
+    if (m.label) s += `<text class="lab" x="${(x + 11).toFixed(1)}" y="${(y + 3.5).toFixed(1)}" style="font-size:10.5px;paint-order:stroke;stroke:var(--paper);stroke-width:3px">${esc(m.label)}</text>`;
   });
   if (opts.xl) s += `<text x="${(L + w - R) / 2}" y="${h - 3}" text-anchor="middle" class="lab">${esc(opts.xl)}</text>`;
   if (opts.yl) s += `<text transform="translate(9,${(T + h - B) / 2}) rotate(-90)" text-anchor="middle" class="lab">${esc(opts.yl)}</text>`;
@@ -613,15 +627,21 @@ export function mount(ROOT, CORE) {
         <td class="n">${num(s.zone, 0)}<small>${s.nloc}</small></td><td class="n">${num(s.locSdH != null ? s.locSdH * 100 : null, 0)} / ${num(s.locSdS != null ? s.locSdS * 100 : null, 0)}<small>cm</small></td><td class="n">${num(s.bauer, 1)}</td></tr>`; }).join('')}
       </table></div>
       <div class="note">単位：球速 km/h、回転数 rpm、回転効率 %、変化量 cm、リリース m、入射角 度。ゾーンは175cm想定（高さ ${zone().bot}〜${zone().top} m、横 ±${zone().side} m）。Warmupは${F.warm ? '含みます' : '除いています'}。</div></div>`;
-    const ptsMv = vis.map(r => ({ x: r['横変化量'], y: r['縦変化量'], c: typeColor(r['球種']), t: `${jtype(r['球種'])} ${r['測定日']} ${num(r['球速'], 1)}km/h 縦${num(r['縦変化量'], 0)} 横${num(r['横変化量'], 0)}${isEst(r, '縦変化量') ? '（補完）' : ''}` , o: isEst(r, '縦変化量') ? .4 : .8 }));
-    const ptsRel = vis.map(r => ({ x: r['リリース横幅'], y: r['リリース高さ'], c: typeColor(r['球種']), t: `${jtype(r['球種'])} ${r['測定日']} 横${num(r['リリース横幅'], 2)} 高${num(r['リリース高さ'], 2)}` }));
-    const ptsLoc = vis.map(r => ({ x: r['コース横'], y: r['コース高さ'], c: typeColor(r['球種']), t: `${jtype(r['球種'])} ${r['測定日']} ${num(r['球速'], 1)}km/h` }));
+    const ref = veloRef(all);
+    const col = r => shade(typeColor(r['球種']), ref ? Number(r['球速']) / ref : null);
+    const vt = r => `${jtype(r['球種'])} ${r['測定日']} ${num(r['球速'], 1)}km/h${ref && isNum(r['球速']) ? `（${Math.round(r['球速'] / ref * 100)}%）` : ''}`;
+    const ptsMv = vis.map(r => ({ x: r['横変化量'], y: r['縦変化量'], c: col(r), hollow: isEst(r, '縦変化量'), t: `${vt(r)} 縦${num(r['縦変化量'], 0)} 横${num(r['横変化量'], 0)}${isEst(r, '縦変化量') ? '（補完）' : ''}` }));
+    const meansMv = types.filter(t => !F.hideTypes[t]).map(t => { const rs = all.filter(r => String(r['球種']) === t); const x = mean(nums(rs, '横変化量')), y = mean(nums(rs, '縦変化量'));
+      return { x, y, c: typeColor(t), label: jtype(t), t: `${jtype(t)} 平均 縦${num(y, 0)} 横${num(x, 0)}（${nums(rs, '縦変化量').length}球）` }; });
+    const ptsRel = vis.map(r => ({ x: r['リリース横幅'], y: r['リリース高さ'], c: col(r), hollow: isEst(r, 'リリース高さ'), t: `${vt(r)} 横${num(r['リリース横幅'], 2)} 高${num(r['リリース高さ'], 2)}` }));
+    const ptsLoc = vis.map(r => ({ x: r['コース横'], y: r['コース高さ'], c: col(r), hollow: isEst(r, 'コース高さ'), t: vt(r) }));
+    const shadeNote = ref ? `色の濃さ＝球速（ストレート平均 ${num(ref, 1)} km/h を100%として）。中抜きの点は軌道から補完した球` : '中抜きの点は軌道から補完した球';
     const veloG = types.filter(t => !F.hideTypes[t]).map(t => ({ name: jtype(t), c: typeColor(t), vals: nums(all.filter(r => String(r['球種']) === t), '球速') }));
     const byDate = k => types.filter(t => !F.hideTypes[t]).map(t => { const rs = all.filter(r => String(r['球種']) === t && isNum(r[k]) && (k !== '回転数' || !r['回転数疑い']));
       const dates = [...new Set(rs.map(r => r['測定日']))].sort();
       return { name: jtype(t), c: typeColor(t), pts: dates.map(d => { const v = nums(rs.filter(r => r['測定日'] === d), k); return { d, v: mean(v), n: v.length }; }) }; });
     const charts = `<div class="grid2">
-      <div class="card"><h3>変化量<span class="u">横 × 縦 cm。薄い点は軌道から補完した球</span></h3>${scatter({ xr: [-70, 70], yr: [-70, 70], xl: '横変化量 cm', yl: '縦変化量 cm', xticks: 7, yticks: 7, pts: ptsMv, xlabels: sideLabels() })}</div>
+      <div class="card"><h3>変化量<span class="u">横 × 縦 cm。大きい点は球種ごとの平均</span></h3>${scatter({ xr: [-70, 70], yr: [-70, 70], xl: '横変化量 cm', yl: '縦変化量 cm', xticks: 7, yticks: 7, pts: ptsMv, means: meansMv, xlabels: sideLabels() })}<div class="note" style="margin:6px 0 0">${shadeNote}</div></div>
       <div class="card"><h3>リリース点<span class="u">横 × 高さ m</span></h3>${scatter({ xr: [-1.2, 1.2], yr: [1.0, 2.2], xl: 'リリース横幅 m', yl: 'リリース高さ m', xticks: 6, yticks: 6, pts: ptsRel, xlabels: sideLabels() })}</div>
       <div class="card"><h3>球速の分布<span class="u">最小〜最大、太線は平均±1σ</span></h3>${rangeChart(veloG, { unit: 'km/h', dec: 1 })}</div>
       <div class="card"><h3>コース<span class="u">捕手から見て。枠がゾーン</span></h3>${zoneChart(ptsLoc, zone(), { xlabels: sideLabels() })}</div>
@@ -695,11 +715,15 @@ export function mount(ROOT, CORE) {
     const sets = picked.map((p, i) => ({ pid: String(p['選手ID']), name: String(p['氏名']), hand: phand(p['選手ID']), c: CMP_COLORS[i % CMP_COLORS.length],
       rows: base.filter(r => String(r['投手ID']) === String(p['選手ID']) && !F.hideTypes[String(r['球種'])]) }));
     const legend = `<div class="legend">${sets.map(s => `<span><span class="sw" style="background:${s.c}"></span>${esc(s.name)} <span class="cnt">${s.rows.length}球</span></span>`).join('')}</div>`;
-    const mv = scatter({ xr: [-70, 70], yr: [-70, 70], xl: '横変化量 cm', yl: '縦変化量 cm', xticks: 7, yticks: 7, w: 380, h: 340, xlabels: sideLabels(),
-      pts: sets.flatMap(s => s.rows.map(r => ({ x: r['横変化量'], y: r['縦変化量'], c: s.c, o: .6, t: `${s.name} ${jtype(r['球種'])} ${num(r['球速'], 1)}km/h` }))) });
+    sets.forEach(s => { s.ref = veloRef(base.filter(r => String(r['投手ID']) === s.pid)); });
+    const scol = (s, r) => shade(s.c, s.ref ? Number(r['球速']) / s.ref : null);
+    const meansC = sets.flatMap(s => typesIn(s.rows).map(t => { const rs = s.rows.filter(r => String(r['球種']) === t); const x = mean(nums(rs, '横変化量')), y = mean(nums(rs, '縦変化量'));
+      return { x, y, c: s.c, t: `${s.name} ${jtype(t)} 平均 縦${num(y, 0)} 横${num(x, 0)}` }; }));
+    const mv = scatter({ xr: [-70, 70], yr: [-70, 70], xl: '横変化量 cm', yl: '縦変化量 cm', xticks: 7, yticks: 7, w: 380, h: 340, xlabels: sideLabels(), means: meansC,
+      pts: sets.flatMap(s => s.rows.map(r => ({ x: r['横変化量'], y: r['縦変化量'], c: scol(s, r), hollow: isEst(r, '縦変化量'), t: `${s.name} ${jtype(r['球種'])} ${num(r['球速'], 1)}km/h` }))) });
     const rel = scatter({ xr: [-1.2, 1.2], yr: [1.0, 2.2], xl: 'リリース横幅 m', yl: 'リリース高さ m', xticks: 6, yticks: 6, xlabels: sideLabels(),
-      pts: sets.flatMap(s => s.rows.map(r => ({ x: r['リリース横幅'], y: r['リリース高さ'], c: s.c, o: .6, t: s.name }))) });
-    const loc = zoneChart(sets.flatMap(s => s.rows.map(r => ({ x: r['コース横'], y: r['コース高さ'], c: s.c, o: .6, t: s.name }))), zone(), { xlabels: sideLabels() });
+      pts: sets.flatMap(s => s.rows.map(r => ({ x: r['リリース横幅'], y: r['リリース高さ'], c: scol(s, r), hollow: isEst(r, 'リリース高さ'), t: `${s.name} ${jtype(r['球種'])} ${num(r['球速'], 1)}km/h` }))) });
+    const loc = zoneChart(sets.flatMap(s => s.rows.map(r => ({ x: r['コース横'], y: r['コース高さ'], c: scol(s, r), hollow: isEst(r, 'コース高さ'), t: `${s.name} ${jtype(r['球種'])} ${num(r['球速'], 1)}km/h` }))), zone(), { xlabels: sideLabels() });
     const velo = rangeChart(sets.map(s => ({ name: s.name, c: s.c, vals: nums(s.rows, '球速') })), { dec: 1 });
     const spin = rangeChart(sets.map(s => ({ name: s.name, c: s.c, vals: nums(spinOK(s.rows), '回転数') })), { dec: 0 });
     const table = `<div class="card"><h3>数字で比べる<span class="u">選んだ球種をまとめた平均</span></h3><div class="tw"><table>
@@ -707,7 +731,7 @@ export function mount(ROOT, CORE) {
       ${sets.map(s => { const x = stats(s.rows); return `<tr><td><span class="sw" style="background:${s.c}"></span>${esc(s.name)} <span class="muted">${esc(s.hand)}</span></td><td class="n">${x.n}</td>${METRICS.map(m => m[1] === 'eff' ? fmtEst(x.eff, '', 0, x.effEst) : `<td class="n">${num(x[m[1]], m[2])}</td>`).join('')}</tr>`; }).join('')}
       </table></div></div>`;
     return bar + `<div class="note" id="print-head"><b style="font-size:14px">比較</b>　${sets.map(s => esc(s.name)).join('・')}　${F.from || ''}〜${F.to || '現在'}　<span class="muted">作成 ${today()}　取扱注意</span></div>` + legend + table
-      + `<div class="grid2"><div class="card"><h3>変化量</h3>${mv}</div><div class="card"><h3>リリース点</h3>${rel}</div><div class="card"><h3>球速</h3>${velo}</div><div class="card"><h3>回転数<span class="u">疑いのある球は除く</span></h3>${spin}</div><div class="card"><h3>コース</h3>${loc}</div></div>`;
+      + `<div class="grid2"><div class="card"><h3>変化量<span class="u">大きい点は投手×球種の平均</span></h3>${mv}<div class="note" style="margin:6px 0 0">色の濃さ＝球速（各投手のストレート平均を100%として）。中抜きは軌道から補完した球</div></div><div class="card"><h3>リリース点</h3>${rel}</div><div class="card"><h3>球速</h3>${velo}</div><div class="card"><h3>回転数<span class="u">疑いのある球は除く</span></h3>${spin}</div><div class="card"><h3>コース</h3>${loc}</div></div>`;
   }
 
   /* ================= 描画 ================= */
