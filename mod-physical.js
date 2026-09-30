@@ -214,7 +214,9 @@ export function mount(ROOT, CORE) {
 
   function applyMaster(m) {
     MASTER = m;
-    const mineTeam = (MASTER.teams || []).find(t => String(t['自チーム']) === '1');
+    // 自チームが2つ以上あるとき（端末のお試しデータが残っている等）は、設定のチーム名と同じものを優先する
+    const cands = (MASTER.teams || []).filter(t => String(t['自チーム']) === '1');
+    const mineTeam = cands.length <= 1 ? cands[0] : (cands.find(t => String(t['チーム名']) === CFG.TEAM_NAME) || cands.find(t => String(t['チームID']) === 't-' + CFG.TEAM_ID) || cands[0]);
     const tid = mineTeam ? String(mineTeam['チームID']) : '';
     PITCHERS = (MASTER.players || [])
       .filter(x => String(x['チームID']) === tid && String(x['投手']) === '1'
@@ -584,7 +586,11 @@ export function mount(ROOT, CORE) {
     }
   }
 
-  ROOT.addEventListener('hsp:show', () => { if (!loaded && !busy) load(); });
+  /* タブを開くたびに、記録タブが端末に持っている名簿（追加した選手・投げ手の変更）を取り直す */
+  ROOT.addEventListener('hsp:show', () => {
+    if (!loaded && !busy) { load(); return; }
+    const lm = masterFromLocal(); if (lm) { const b = JSON.stringify(PITCHERS); applyMaster(lm); if (b !== JSON.stringify(PITCHERS)) render(); }
+  });
   warmStart();
   render();
   load();

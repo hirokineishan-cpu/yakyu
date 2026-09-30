@@ -216,8 +216,7 @@ function toRow(rec, ctx) {
     '種別': ctx.kind, '区分': String(rec.PitchSession || ''), '球種': String(rec.TaggedPitchType || ''),
     '球速': r1(f(rec.RelSpeed)), '回転数': isNum(rec.SpinRate) ? Math.round(rec.SpinRate) : '', '回転数疑い': '',
     '回転効率': r1(f(rec.SpinAxis3dSpinEfficiency)),
-    '有効回転数': isNum(rec.SpinAxis3dActiveSpinRate) ? Math.round(rec.SpinAxis3dActiveSpinRate)
-                 : (tj && isNum(tj.activeSpin) && isNum(rec.SpinRate) ? (filled.push('有効回転数'), Math.round(tj.activeSpin)) : ''),
+    '有効回転数': isNum(rec.SpinAxis3dActiveSpinRate) ? Math.round(rec.SpinAxis3dActiveSpinRate) : '',
     '回転軸': r1(f(rec.SpinAxis)), '傾き': String(rec.Tilt || ''),
     'リリース高さ': pick(f(rec.RelHeight), tj && tj.relZ, 'リリース高さ', r3),
     'リリース横幅': pick(h(rec.RelSide), tj && isNum(tj.relX) ? tj.relX * sx : '', 'リリース横幅', r3),
@@ -402,11 +401,7 @@ export function mount(ROOT, CORE) {
   const rhSign = () => (String(SETTINGS['右投げの符号'] || '+') === '-' ? -1 : 1);
   const sideLabels = () => String(SETTINGS['コース+側'] || '三塁側') === '一塁側' ? ['三塁側', '一塁側'] : ['一塁側', '三塁側'];
   const isEst = (r, k) => String(r['補完'] || '').split(',').indexOf(k) >= 0;
-  const eff = r => {   // 回転効率：実測があればそれ、無ければ推定（100%で頭打ち）
-    if (isNum(r['回転効率'])) return { v: Number(r['回転効率']), est: false };
-    if (isNum(r['有効回転数']) && isNum(r['回転数']) && !r['回転数疑い']) return { v: Math.min(100, Number(r['有効回転数']) / Number(r['回転数']) * 100), est: true };
-    return null;
-  };
+  const eff = r => isNum(r['回転効率']) ? { v: Number(r['回転効率']), est: false } : null;   // 回転効率：Trackmanの実測だけを使う（推定はしない）
 
   /* ---- 端末に残っているもので先に出す ---- */
   function masterFromLocal() {
@@ -421,7 +416,10 @@ export function mount(ROOT, CORE) {
   }
   function applyMaster(m) {
     MASTER = m;
-    const mine = (m.teams || []).find(t => String(t['自チーム']) === '1'); const tid = mine ? String(mine['チームID']) : '';
+    // 自チームが2つ以上あるとき（端末のお試しデータが残っている等）は、設定のチーム名と同じものを優先する
+    const cands = (m.teams || []).filter(t => String(t['自チーム']) === '1');
+    const mineTeam = cands.length <= 1 ? cands[0] : (cands.find(t => String(t['チーム名']) === CFG.TEAM_NAME) || cands.find(t => String(t['チームID']) === 't-' + CFG.TEAM_ID) || cands[0]);
+    const tid = mineTeam ? String(mineTeam['チームID']) : '';
     PITCHERS = (m.players || []).filter(x => String(x['チームID']) === tid && String(x['投手']) === '1'
       && String(x['状態'] || '') !== '退部' && !String(x['備考'] || '').startsWith('統合先:'))
       .sort((a, b) => Number(a['順'] || 0) - Number(b['順'] || 0));
@@ -436,7 +434,8 @@ export function mount(ROOT, CORE) {
   async function load(from) {
     if (from) fetchedFrom = from;
     busy = true; if (!loaded) render();
-    const before = loaded ? JSON.stringify([ROWS.length, SESSIONS.length, PITCHERS.length, SETTINGS]) : '';
+    const sig = () => JSON.stringify([ROWS.length, SESSIONS.length, PITCHERS.map(p => [p['選手ID'], p['氏名'], p['投']]), SETTINGS]);
+    const before = loaded ? sig() : '';
     try {
       const [m, p] = await Promise.all([masterFresh ? null : api('getMaster'), api('getTrackman', { from: fetchedFrom })]);
       if (m) { if (!m.ok) throw new Error(m.error || 'マスタを取れませんでした'); applyMaster(m.master); masterFresh = true; }
@@ -444,7 +443,7 @@ export function mount(ROOT, CORE) {
       applyTm(p);
       try { const s = JSON.stringify({ sessions: SESSIONS, rows: ROWS, settings: SETTINGS, from: fetchedFrom }); if (s.length < 2500000) localStorage.setItem(TMKEY, s); else localStorage.removeItem(TMKEY); } catch (e) {}
       loaded = true; msg = ''; busy = false;
-      if (before !== JSON.stringify([ROWS.length, SESSIONS.length, PITCHERS.length, SETTINGS])) render();
+      if (before !== sig()) render();
       return;
     } catch (e) { msg = String(e.message || e); }
     busy = false; render();
@@ -618,7 +617,7 @@ export function mount(ROOT, CORE) {
       <div class="kpi"><b>ストレート 変化量</b><span>${num(sfb.ivb, 0)} / ${num(sfb.hb, 0)}</span><small>cm 縦/横</small></div>
       <div class="kpi"><b>ゾーン率</b><span>${num(sall.zone, 0)}</span><small>%　${sall.nloc}球</small></div>
     </div>`;
-    const table = `<div class="card"><h3>球種別<span class="u">平均。括弧内は有効球数。「推」は推定値</span></h3><div class="tw"><table>
+    const table = `<div class="card"><h3>球種別<span class="u">平均。括弧内は有効球数。回転効率はTrackmanの実測がある球だけ</span></h3><div class="tw"><table>
       <tr><th>球種</th><th class="n">球数</th><th class="n">球速</th><th class="n">最速</th><th class="n">回転数</th><th class="n">回転効率</th><th class="n">縦変化</th><th class="n">横変化</th><th class="n">リリース高</th><th class="n">リリース横</th><th class="n">エクステ</th><th class="n">入射角縦</th><th class="n">ゾーン率</th><th class="n">ばらつき 縦/横</th><th class="n">Bauer</th></tr>
       ${types.map(t => { const s = stats(all.filter(r => String(r['球種']) === t)); return `<tr><td><span class="sw" style="background:${typeColor(t)}"></span>${esc(jtype(t))}</td>
         <td class="n">${s.n}</td><td class="n">${num(s.velo, 1)}</td><td class="n">${num(s.vmax, 1)}</td><td class="n">${num(s.spin, 0)}<small>${s.nspin}</small></td>
@@ -648,7 +647,7 @@ export function mount(ROOT, CORE) {
       <div class="card"><h3>球速の推移<span class="u">日ごとの平均</span></h3>${trendChart(byDate('球速'), { dec: 1, yl: 'km/h' })}</div>
       <div class="card"><h3>縦変化量の推移<span class="u">日ごとの平均 cm</span></h3>${trendChart(byDate('縦変化量'), { dec: 0, yl: 'cm' })}</div>
       <div class="card"><h3>回転数の推移<span class="u">日ごとの平均 rpm（疑いのある球は除く）</span></h3>${trendChart(byDate('回転数'), { dec: 0, yl: 'rpm' })}</div>
-      <div class="card"><h3>回転効率<span class="u">${all.some(r => isNum(r['回転効率'])) ? '実測' : '推定（軌道と回転数から。100%で頭打ち）'}</span></h3>${rangeChart(types.filter(t => !F.hideTypes[t]).map(t => ({ name: jtype(t), c: typeColor(t), vals: all.filter(r => String(r['球種']) === t).map(eff).filter(Boolean).map(e => e.v) })), { dec: 0 })}</div>
+      <div class="card"><h3>回転効率<span class="u">Trackmanの実測 %</span></h3>${all.some(r => isNum(r['回転効率'])) ? rangeChart(types.filter(t => !F.hideTypes[t]).map(t => ({ name: jtype(t), c: typeColor(t), vals: all.filter(r => String(r['球種']) === t).map(eff).filter(Boolean).map(e => e.v) })), { dec: 0 }) : '<div class="empty">この期間の球には回転効率の実測が入っていません</div>'}</div>
     </div>`;
     const sess = SESSIONS.filter(s => String(s['投手ID']) === F.player).sort((a, b) => String(b['測定日']).localeCompare(String(a['測定日'])));
     const head = `<div class="note" id="print-head"><b style="font-size:14px">${esc(pname(F.player))}</b>　${esc(phand(F.player))}投　${F.from || ''}〜${F.to || '現在'}　${F.kind || '対戦・ブルペン'}　<span class="muted">作成 ${today()}　取扱注意</span></div>`;
@@ -791,7 +790,12 @@ export function mount(ROOT, CORE) {
     if (id === 'tm-cmax') { F.cmpMax = val; render(); return; }
   });
 
-  ROOT.addEventListener('hsp:show', () => { if (!loaded && !busy) load(); });
+  /* タブを開くたびに、記録タブが端末に持っている名簿（追加した選手・投げ手の変更）を取り直す */
+  ROOT.addEventListener('hsp:show', () => {
+    if (!loaded && !busy) { load(); return; }
+    const lm = masterFromLocal(); if (lm) { const b = JSON.stringify(PITCHERS.map(p => [p['選手ID'], p['氏名'], p['投']])); applyMaster(lm);
+      if (b !== JSON.stringify(PITCHERS.map(p => [p['選手ID'], p['氏名'], p['投']]))) render(); }
+  });
   warmStart();
   if (!ROWS.length) view = 'in';
   render();
