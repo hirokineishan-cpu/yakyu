@@ -389,7 +389,7 @@ export function mount(ROOT, CORE) {
   let MASTER = null, PITCHERS = [], SESSIONS = [], ROWS = [], SETTINGS = {};
   let loaded = false, busy = false, msg = '', masterFresh = false, fetchedFrom = fiscalStart();
   const F = { from: fiscalStart(), to: '', kind: '', warm: false, type: '', hand: '', player: '', hideTypes: {},
-              teamType: 'Fastball', tx: '横変化量', ty: '縦変化量', cmp: {}, cmpMin: '', cmpMax: '', sortKey: '球速', sortDir: -1 };
+              teamType: 'Fastball', tx: '横変化量', ty: '縦変化量', cmp: {}, cmpMin: '', cmpMax: '', sortKey: '球速', sortDir: -1, showPanel: false };
   const QUEUE = [];    // 取り込み待ちのファイル
   let IMPMSG = '';
 
@@ -471,7 +471,7 @@ export function mount(ROOT, CORE) {
       vaa: mean(nums(rows, '入射角縦')), haa: mean(nums(rows, '入射角横')), vra: mean(nums(rows, 'リリース角縦')), hra: mean(nums(rows, 'リリース角横')),
       zone: loc.length ? loc.filter(inZone).length / loc.length * 100 : null, nloc: loc.length,
       locSdH: sd(nums(loc, 'コース高さ')), locSdS: sd(nums(loc, 'コース横')),
-      bauer: (v.length && sp.length) ? mean(sp) / mean(v) : null, effv: mean(nums(rows, '体感球速')) };
+      bauer: (v.length && sp.length) ? mean(sp) / (mean(v) / 1.609344) : null, effv: mean(nums(rows, '体感球速')) };   // Bauer Unit = rpm ÷ mph
   }
   const fmtEst = (s, key, dec, est) => est ? `<td class="n est" title="推定">${num(s, dec)}<small>推</small></td>` : `<td class="n">${num(s, dec)}</td>`;
 
@@ -590,6 +590,41 @@ export function mount(ROOT, CORE) {
   }
 
   /* ================= 画面：個人 ================= */
+  /* ---- 表示項目（レポートに出す列・グラフ）。端末ごとに覚える ---- */
+  const METRICS = [['球速', 'velo', 1], ['最速', 'vmax', 1], ['回転数', 'spin', 0], ['回転効率', 'eff', 0], ['縦変化量', 'ivb', 1], ['横変化量', 'hb', 1],
+    ['リリース高さ', 'relH', 2], ['リリース横幅', 'relS', 2], ['エクステンション', 'ext', 2], ['入射角縦', 'vaa', 1], ['入射角横', 'haa', 1], ['リリース角縦', 'vra', 1], ['リリース角横', 'hra', 1],
+    ['ゾーン率', 'zone', 0], ['ばらつき', 'locsd', 0], ['Bauer', 'bauer', 1], ['体感球速', 'effv', 1]];
+  const SHOWKEY = 'hsp-tmshow-' + CFG.TEAM_ID + CFG.STORE;
+  let SHOW = (() => { try { return JSON.parse(localStorage.getItem(SHOWKEY) || '{}'); } catch (e) { return {}; } })();
+  const DEF_HIDE = { 'p:col:入射角横': 1, 'p:col:リリース角縦': 1, 'p:col:リリース角横': 1, 'p:col:体感球速': 1,
+                     'c:col:入射角横': 1, 'c:col:リリース角縦': 1, 'c:col:リリース角横': 1, 'c:col:体感球速': 1 };
+  const on = k => (k in SHOW) ? !!SHOW[k] : !DEF_HIDE[k];
+  const saveShow = () => { try { localStorage.setItem(SHOWKEY, JSON.stringify(SHOW)); } catch (e) {} };
+  const ITEMS = {
+    player: [['その他', [['p:kpi', '上の数字（球数・平均球速など）'], ['p:table', '球種別の表'], ['p:sess', '取り込みの一覧']]],
+             ['表の列', METRICS.map(m => ['p:col:' + m[0], m[0]])],
+             ['グラフ', ['変化量', 'リリース点', '球速の分布', 'コース', '球速の推移', '縦変化量の推移', '回転数の推移', '回転効率'].map(n => ['p:chart:' + n, n])]],
+    team:   [['表の列', METRICS.map(m => ['t:col:' + m[0], m[0]])],
+             ['その他', [['t:scatter', '散布図'], ['t:alltypes', '球種ごとの球速と回転数']]]],
+    compare:[['表の列', METRICS.map(m => ['c:col:' + m[0], m[0]])],
+             ['グラフ', ['変化量', 'リリース点', '球速', '回転数', 'コース'].map(n => ['c:chart:' + n, n])]]
+  };
+  function showPanel(view) {
+    if (!F.showPanel) return '';
+    const groups = ITEMS[view] || [];
+    return `<div class="card noprint"><h3>表示項目<span class="u">消した項目はPDFにも出ません。この端末にだけ覚えます</span></h3>
+      ${groups.map(([g, items]) => `<div class="note" style="margin:6px 0 4px"><b>${esc(g)}</b></div><div class="chips">${items.map(([k, n]) => `<button class="chip" data-show="${esc(k)}" aria-pressed="${on(k)}">${esc(n)}</button>`).join('')}</div>`).join('')}
+      <div style="margin-top:10px"><button class="b" id="tm-showall" data-view="${view}">この画面をすべて表示に戻す</button></div></div>`;
+  }
+  const showBtn = () => `<button class="b" id="tm-showbtn" aria-pressed="${!!F.showPanel}">表示項目</button>`;
+  function cell(s, m) {
+    if (m[1] === 'eff') return fmtEst(s.eff, '', 0, s.effEst);
+    if (m[1] === 'locsd') return `<td class="n">${num(s.locSdH != null ? s.locSdH * 100 : null, 0)} / ${num(s.locSdS != null ? s.locSdS * 100 : null, 0)}<small>cm</small></td>`;
+    const extra = m[1] === 'spin' ? `<small>${s.nspin}</small>` : m[1] === 'zone' ? `<small>${s.nloc}</small>` : m[1] === 'ivb' ? `<small>${s.nbrk}</small>` : '';
+    return `<td class="n">${num(s[m[1]], m[2])}${extra}</td>`;
+  }
+  const colsOf = pre => METRICS.filter(m => on(pre + m[0]));
+
   function filterBar(extra) {
     return `<div class="bar noprint">
       <label class="f">投手<select id="tm-player">${PITCHERS.map(p => `<option value="${esc(p['選手ID'])}" ${String(p['選手ID']) === F.player ? 'selected' : ''}>${esc(p['氏名'])}</option>`).join('')}</select></label>
@@ -598,7 +633,7 @@ export function mount(ROOT, CORE) {
       <label class="f">種別<select id="tm-kindf"><option value="">対戦もブルペンも</option><option value="対戦" ${F.kind === '対戦' ? 'selected' : ''}>対戦だけ</option><option value="ブルペン" ${F.kind === 'ブルペン' ? 'selected' : ''}>ブルペンだけ</option></select></label>
       <label class="c" style="padding-bottom:7px"><input type="checkbox" id="tm-warm" ${F.warm ? 'checked' : ''}> Warmupも含める</label>
       ${extra || ''}
-      <div style="margin-left:auto"><button class="b" id="tm-print">PDFで保存</button></div>
+      <div style="margin-left:auto; display:flex; gap:6px">${showBtn()}<button class="b" id="tm-print">PDFで保存</button></div>
     </div>`;
   }
   function typeChips(types, rows) {
@@ -617,15 +652,12 @@ export function mount(ROOT, CORE) {
       <div class="kpi"><b>ストレート 変化量</b><span>${num(sfb.ivb, 0)} / ${num(sfb.hb, 0)}</span><small>cm 縦/横</small></div>
       <div class="kpi"><b>ゾーン率</b><span>${num(sall.zone, 0)}</span><small>%　${sall.nloc}球</small></div>
     </div>`;
+    const pc = colsOf('p:col:');
     const table = `<div class="card"><h3>球種別<span class="u">平均。括弧内は有効球数。回転効率はTrackmanの実測がある球だけ</span></h3><div class="tw"><table>
-      <tr><th>球種</th><th class="n">球数</th><th class="n">球速</th><th class="n">最速</th><th class="n">回転数</th><th class="n">回転効率</th><th class="n">縦変化</th><th class="n">横変化</th><th class="n">リリース高</th><th class="n">リリース横</th><th class="n">エクステ</th><th class="n">入射角縦</th><th class="n">ゾーン率</th><th class="n">ばらつき 縦/横</th><th class="n">Bauer</th></tr>
-      ${types.map(t => { const s = stats(all.filter(r => String(r['球種']) === t)); return `<tr><td><span class="sw" style="background:${typeColor(t)}"></span>${esc(jtype(t))}</td>
-        <td class="n">${s.n}</td><td class="n">${num(s.velo, 1)}</td><td class="n">${num(s.vmax, 1)}</td><td class="n">${num(s.spin, 0)}<small>${s.nspin}</small></td>
-        ${fmtEst(s.eff, '', 0, s.effEst)}<td class="n">${num(s.ivb, 1)}<small>${s.nbrk}</small></td><td class="n">${num(s.hb, 1)}</td>
-        <td class="n">${num(s.relH, 2)}</td><td class="n">${num(s.relS, 2)}</td><td class="n">${num(s.ext, 2)}</td><td class="n">${num(s.vaa, 1)}</td>
-        <td class="n">${num(s.zone, 0)}<small>${s.nloc}</small></td><td class="n">${num(s.locSdH != null ? s.locSdH * 100 : null, 0)} / ${num(s.locSdS != null ? s.locSdS * 100 : null, 0)}<small>cm</small></td><td class="n">${num(s.bauer, 1)}</td></tr>`; }).join('')}
+      <tr><th>球種</th><th class="n">球数</th>${pc.map(m => `<th class="n">${esc(m[0])}</th>`).join('')}</tr>
+      ${types.map(t => { const s = stats(all.filter(r => String(r['球種']) === t)); return `<tr><td><span class="sw" style="background:${typeColor(t)}"></span>${esc(jtype(t))}</td><td class="n">${s.n}</td>${pc.map(m => cell(s, m)).join('')}</tr>`; }).join('')}
       </table></div>
-      <div class="note">単位：球速 km/h、回転数 rpm、回転効率 %、変化量 cm、リリース m、入射角 度。ゾーンは175cm想定（高さ ${zone().bot}〜${zone().top} m、横 ±${zone().side} m）。Warmupは${F.warm ? '含みます' : '除いています'}。</div></div>`;
+      <div class="note">単位：球速 km/h、回転数 rpm、回転効率 %、変化量 cm、リリース m、入射角 度、ばらつき cm（縦/横）、Bauer＝回転数÷球速(mph)。ゾーンは175cm想定（高さ ${zone().bot}〜${zone().top} m、横 ±${zone().side} m）。Warmupは${F.warm ? '含みます' : '除いています'}。</div></div>`;
     const ref = veloRef(all);
     const col = r => shade(typeColor(r['球種']), ref ? Number(r['球速']) / ref : null);
     const vt = r => `${jtype(r['球種'])} ${r['測定日']} ${num(r['球速'], 1)}km/h${ref && isNum(r['球速']) ? `（${Math.round(r['球速'] / ref * 100)}%）` : ''}`;
@@ -639,25 +671,24 @@ export function mount(ROOT, CORE) {
     const byDate = k => types.filter(t => !F.hideTypes[t]).map(t => { const rs = all.filter(r => String(r['球種']) === t && isNum(r[k]) && (k !== '回転数' || !r['回転数疑い']));
       const dates = [...new Set(rs.map(r => r['測定日']))].sort();
       return { name: jtype(t), c: typeColor(t), pts: dates.map(d => { const v = nums(rs.filter(r => r['測定日'] === d), k); return { d, v: mean(v), n: v.length }; }) }; });
-    const charts = `<div class="grid2">
-      <div class="card"><h3>変化量<span class="u">横 × 縦 cm。大きい点は球種ごとの平均</span></h3>${scatter({ xr: [-70, 70], yr: [-70, 70], xl: '横変化量 cm', yl: '縦変化量 cm', xticks: 7, yticks: 7, pts: ptsMv, means: meansMv, xlabels: sideLabels() })}<div class="note" style="margin:6px 0 0">${shadeNote}</div></div>
-      <div class="card"><h3>リリース点<span class="u">横 × 高さ m</span></h3>${scatter({ xr: [-1.2, 1.2], yr: [1.0, 2.2], xl: 'リリース横幅 m', yl: 'リリース高さ m', xticks: 6, yticks: 6, pts: ptsRel, xlabels: sideLabels() })}</div>
-      <div class="card"><h3>球速の分布<span class="u">最小〜最大、太線は平均±1σ</span></h3>${rangeChart(veloG, { unit: 'km/h', dec: 1 })}</div>
-      <div class="card"><h3>コース<span class="u">捕手から見て。枠がゾーン</span></h3>${zoneChart(ptsLoc, zone(), { xlabels: sideLabels() })}</div>
-      <div class="card"><h3>球速の推移<span class="u">日ごとの平均</span></h3>${trendChart(byDate('球速'), { dec: 1, yl: 'km/h' })}</div>
-      <div class="card"><h3>縦変化量の推移<span class="u">日ごとの平均 cm</span></h3>${trendChart(byDate('縦変化量'), { dec: 0, yl: 'cm' })}</div>
-      <div class="card"><h3>回転数の推移<span class="u">日ごとの平均 rpm（疑いのある球は除く）</span></h3>${trendChart(byDate('回転数'), { dec: 0, yl: 'rpm' })}</div>
-      <div class="card"><h3>回転効率<span class="u">Trackmanの実測 %</span></h3>${all.some(r => isNum(r['回転効率'])) ? rangeChart(types.filter(t => !F.hideTypes[t]).map(t => ({ name: jtype(t), c: typeColor(t), vals: all.filter(r => String(r['球種']) === t).map(eff).filter(Boolean).map(e => e.v) })), { dec: 0 }) : '<div class="empty">この期間の球には回転効率の実測が入っていません</div>'}</div>
-    </div>`;
+    const CH = {
+      '変化量': () => `<div class="card"><h3>変化量<span class="u">横 × 縦 cm。大きい点は球種ごとの平均</span></h3>${scatter({ xr: [-70, 70], yr: [-70, 70], xl: '横変化量 cm', yl: '縦変化量 cm', xticks: 7, yticks: 7, pts: ptsMv, means: meansMv, xlabels: sideLabels() })}<div class="note" style="margin:6px 0 0">${shadeNote}</div></div>`,
+      'リリース点': () => `<div class="card"><h3>リリース点<span class="u">横 × 高さ m</span></h3>${scatter({ xr: [-1.2, 1.2], yr: [1.0, 2.2], xl: 'リリース横幅 m', yl: 'リリース高さ m', xticks: 6, yticks: 6, pts: ptsRel, xlabels: sideLabels() })}</div>`,
+      '球速の分布': () => `<div class="card"><h3>球速の分布<span class="u">最小〜最大、太線は平均±1σ</span></h3>${rangeChart(veloG, { unit: 'km/h', dec: 1 })}</div>`,
+      'コース': () => `<div class="card"><h3>コース<span class="u">捕手から見て。枠がゾーン</span></h3>${zoneChart(ptsLoc, zone(), { xlabels: sideLabels() })}</div>`,
+      '球速の推移': () => `<div class="card"><h3>球速の推移<span class="u">日ごとの平均</span></h3>${trendChart(byDate('球速'), { dec: 1, yl: 'km/h' })}</div>`,
+      '縦変化量の推移': () => `<div class="card"><h3>縦変化量の推移<span class="u">日ごとの平均 cm</span></h3>${trendChart(byDate('縦変化量'), { dec: 0, yl: 'cm' })}</div>`,
+      '回転数の推移': () => `<div class="card"><h3>回転数の推移<span class="u">日ごとの平均 rpm（疑いのある球は除く）</span></h3>${trendChart(byDate('回転数'), { dec: 0, yl: 'rpm' })}</div>`,
+      '回転効率': () => `<div class="card"><h3>回転効率<span class="u">Trackmanの実測 %</span></h3>${all.some(r => isNum(r['回転効率'])) ? rangeChart(types.filter(t => !F.hideTypes[t]).map(t => ({ name: jtype(t), c: typeColor(t), vals: all.filter(r => String(r['球種']) === t).map(eff).filter(Boolean).map(e => e.v) })), { dec: 0 }) : '<div class="empty">この期間の球には回転効率の実測が入っていません</div>'}</div>`
+    };
+    const charts = `<div class="grid2">${Object.keys(CH).filter(k => on('p:chart:' + k)).map(k => CH[k]()).join('')}</div>`;
     const sess = SESSIONS.filter(s => String(s['投手ID']) === F.player).sort((a, b) => String(b['測定日']).localeCompare(String(a['測定日'])));
     const head = `<div class="note" id="print-head"><b style="font-size:14px">${esc(pname(F.player))}</b>　${esc(phand(F.player))}投　${F.from || ''}〜${F.to || '現在'}　${F.kind || '対戦・ブルペン'}　<span class="muted">作成 ${today()}　取扱注意</span></div>`;
-    return filterBar() + head + (all.length ? kpis + typeChips(types, all) + table + charts : '<div class="empty">この期間の記録がありません</div>')
-      + (sess.length ? `<div class="card noprint"><h3>この投手の取り込み</h3><div class="tw"><table><tr><th>測定日</th><th>種別</th><th class="n">球数</th><th>取り込み</th></tr>${sess.map(s => `<tr><td>${esc(s['測定日'])}</td><td>${esc(s['種別'])}</td><td class="n">${esc(s['球数'])}</td><td class="muted">${esc(String(s['取り込み日時']).slice(0, 16))}</td></tr>`).join('')}</table></div></div>` : '');
+    return filterBar() + showPanel('player') + head + (all.length ? (on('p:kpi') ? kpis : '') + typeChips(types, all) + (on('p:table') ? table : '') + charts : '<div class="empty">この期間の記録がありません</div>')
+      + (sess.length && on('p:sess') ? `<div class="card noprint"><h3>この投手の取り込み</h3><div class="tw"><table><tr><th>測定日</th><th>種別</th><th class="n">球数</th><th>取り込み</th></tr>${sess.map(s => `<tr><td>${esc(s['測定日'])}</td><td>${esc(s['種別'])}</td><td class="n">${esc(s['球数'])}</td><td class="muted">${esc(String(s['取り込み日時']).slice(0, 16))}</td></tr>`).join('')}</table></div></div>` : '');
   }
 
   /* ================= 画面：チーム ================= */
-  const METRICS = [['球速', 'velo', 1], ['最速', 'vmax', 1], ['回転数', 'spin', 0], ['回転効率', 'eff', 0], ['縦変化量', 'ivb', 1], ['横変化量', 'hb', 1],
-    ['リリース高さ', 'relH', 2], ['リリース横幅', 'relS', 2], ['エクステンション', 'ext', 2], ['入射角縦', 'vaa', 1], ['入射角横', 'haa', 1], ['リリース角縦', 'vra', 1], ['リリース角横', 'hra', 1], ['ゾーン率', 'zone', 0], ['Bauer', 'bauer', 1], ['体感球速', 'effv', 1]];
   function viewTeam() {
     const base = filt(ROWS, { hand: F.hand });
     const types = typesIn(base);
@@ -673,26 +704,27 @@ export function mount(ROOT, CORE) {
       <label class="f">投げ手<select id="tm-hand"><option value="">右も左も</option><option value="右" ${F.hand === '右' ? 'selected' : ''}>右投げ</option><option value="左" ${F.hand === '左' ? 'selected' : ''}>左投げ</option></select></label>
       <label class="f">球種<select id="tm-ttype">${types.map(t => `<option value="${esc(t)}" ${t === F.teamType ? 'selected' : ''}>${esc(jtype(t))}</option>`).join('')}</select></label>
       <label class="c" style="padding-bottom:7px"><input type="checkbox" id="tm-warm" ${F.warm ? 'checked' : ''}> Warmupも含める</label>
-      <div style="margin-left:auto"><button class="b" id="tm-print">PDFで保存</button></div></div>`;
+      <div style="margin-left:auto; display:flex; gap:6px">${showBtn()}<button class="b" id="tm-print">PDFで保存</button></div></div>` + showPanel('team');
     if (!rows.length) return bar + '<div class="empty">この条件の記録がありません</div>';
+    const tc = colsOf('t:col:');
     const th = m => `<th class="n s" data-sort="${esc(m[0])}">${esc(m[0])}${F.sortKey === m[0] ? (F.sortDir < 0 ? ' ▼' : ' ▲') : ''}</th>`;
     const table = `<div class="card"><h3>${esc(jtype(F.teamType))}の比較<span class="u">見出しを押すと並べ替え。括弧内は有効球数</span></h3><div class="tw"><table>
-      <tr><th>投手</th><th class="n">球数</th>${METRICS.map(th).join('')}</tr>
+      <tr><th>投手</th><th class="n">球数</th>${tc.map(th).join('')}</tr>
       ${rows.map(x => `<tr class="${x.pid === F.player ? 'me' : ''}"><td><span class="sw" style="background:${HAND_COLOR[x.hand] || 'var(--t0)'}"></span><a href="#" data-goto="${esc(x.pid)}" style="color:inherit">${esc(x.name)}</a> <span class="muted">${esc(x.hand)}</span></td><td class="n">${x.s.n}</td>
-        ${METRICS.map(m => m[1] === 'eff' ? fmtEst(x.s.eff, '', 0, x.s.effEst) : `<td class="n">${num(x.s[m[1]], m[2])}${m[1] === 'spin' ? `<small>${x.s.nspin}</small>` : m[1] === 'zone' ? `<small>${x.s.nloc}</small>` : ''}</td>`).join('')}</tr>`).join('')}
-      </table></div><div class="note">平均が0球の項目は「—」。回転数は取りこぼしの疑いがある球を除いた平均。</div></div>`;
+        ${tc.map(m => cell(x.s, m)).join('')}</tr>`).join('')}
+      </table></div><div class="note">平均が0球の項目は「—」。回転数は取りこぼしの疑いがある球を除いた平均。Bauer＝回転数÷球速(mph)。</div></div>`;
     const mx = METRICS.find(m => m[0] === F.tx) || METRICS[5], my = METRICS.find(m => m[0] === F.ty) || METRICS[4];
     const xs = rows.map(r => r.s[mx[1]]).filter(isNum), ys = rows.map(r => r.s[my[1]]).filter(isNum);
     const rng = (a, sym) => { if (!a.length) return [-1, 1]; let lo = Math.min(...a), hi = Math.max(...a); if (sym) { const m = Math.max(Math.abs(lo), Math.abs(hi), 5); return [-m * 1.15, m * 1.15]; } const p = Math.max((hi - lo) * .15, 0.5); return [lo - p, hi + p]; };
     const sym = k => /変化量|横幅|角横|入射角横/.test(k);
     const sc = scatter({ xr: rng(xs, sym(mx[0])), yr: rng(ys, sym(my[0])), xl: mx[0], yl: my[0], w: 520, h: 380,
       pts: rows.map(r => ({ x: r.s[mx[1]], y: r.s[my[1]], c: HAND_COLOR[r.hand] || 'var(--t0)', r: 5, label: r.name, t: `${r.name} ${mx[0]} ${num(r.s[mx[1]], mx[2])} / ${my[0]} ${num(r.s[my[1]], my[2])}` })) });
-    const sel = (id, cur) => `<select id="${id}">${METRICS.map(m => `<option ${m[0] === cur ? 'selected' : ''}>${esc(m[0])}</option>`).join('')}</select>`;
+    const sel = (id, cur) => `<select id="${id}">${METRICS.filter(m => m[1] !== 'locsd').map(m => `<option ${m[0] === cur ? 'selected' : ''}>${esc(m[0])}</option>`).join('')}</select>`;
     const chart = `<div class="card"><h3>散布図<span class="u"><span class="sw" style="background:${HAND_COLOR['右']}"></span>右投げ <span class="sw" style="background:${HAND_COLOR['左']}"></span>左投げ</span></h3>
       <div class="noprint" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px"><label class="f">横軸${sel('tm-tx', mx[0])}</label><label class="f">縦軸${sel('tm-ty', my[0])}</label></div><div style="max-width:640px">${sc}</div></div>`;
     const allT = `<div class="card"><h3>球種ごとの球速と回転数<span class="u">全投手</span></h3><div class="tw"><table><tr><th>球種</th><th class="n">球数</th><th class="n">投手数</th><th class="n">球速</th><th class="n">最速</th><th class="n">回転数</th><th class="n">縦変化量</th><th class="n">横変化量</th><th class="n">ゾーン率</th></tr>
       ${types.map(t => { const rs = base.filter(r => String(r['球種']) === t); const s = stats(rs); return `<tr><td><span class="sw" style="background:${typeColor(t)}"></span>${esc(jtype(t))}</td><td class="n">${s.n}</td><td class="n">${new Set(rs.map(r => r['投手ID'])).size}</td><td class="n">${num(s.velo, 1)}</td><td class="n">${num(s.vmax, 1)}</td><td class="n">${num(s.spin, 0)}</td><td class="n">${num(s.ivb, 1)}</td><td class="n">${num(s.hb, 1)}</td><td class="n">${num(s.zone, 0)}</td></tr>`; }).join('')}</table></div></div>`;
-    return bar + `<div class="note" id="print-head"><b style="font-size:14px">チーム</b>　${F.from || ''}〜${F.to || '現在'}　${F.kind || '対戦・ブルペン'}　<span class="muted">作成 ${today()}　取扱注意</span></div>` + table + chart + allT;
+    return bar + `<div class="note" id="print-head"><b style="font-size:14px">チーム</b>　${F.from || ''}〜${F.to || '現在'}　${F.kind || '対戦・ブルペン'}　<span class="muted">作成 ${today()}　取扱注意</span></div>` + table + (on('t:scatter') ? chart : '') + (on('t:alltypes') ? allT : '');
   }
 
   /* ================= 画面：比較 ================= */
@@ -707,7 +739,7 @@ export function mount(ROOT, CORE) {
       <label class="f">種別<select id="tm-kindf"><option value="">対戦もブルペンも</option><option value="対戦" ${F.kind === '対戦' ? 'selected' : ''}>対戦だけ</option><option value="ブルペン" ${F.kind === 'ブルペン' ? 'selected' : ''}>ブルペンだけ</option></select></label>
       <label class="f">球速 km/h<span><input type="number" id="tm-cmin" value="${F.cmpMin}" placeholder="以上"> 〜 <input type="number" id="tm-cmax" value="${F.cmpMax}" placeholder="以下"></span></label>
       <label class="c" style="padding-bottom:7px"><input type="checkbox" id="tm-warm" ${F.warm ? 'checked' : ''}> Warmupも含める</label>
-      <div style="margin-left:auto"><button class="b" id="tm-print">PDFで保存</button></div></div>
+      <div style="margin-left:auto; display:flex; gap:6px">${showBtn()}<button class="b" id="tm-print">PDFで保存</button></div></div>` + showPanel('compare') + `
       <div class="card noprint"><h3>比べる投手<span class="u">6人まで</span></h3><div class="chips">${PITCHERS.map(p => `<button class="chip" data-cmp="${esc(p['選手ID'])}" aria-pressed="${!!F.cmp[String(p['選手ID'])]}">${esc(p['氏名'])} <span class="muted">${esc(phand(p['選手ID']))}</span></button>`).join('')}</div>
       <div class="chips" style="margin-top:8px">${types.map(t => `<button class="chip" data-tt="${esc(t)}" aria-pressed="${!F.hideTypes[t]}"><span class="sw" style="background:${typeColor(t)}"></span>${esc(jtype(t))}</button>`).join('')}</div></div>`;
     if (picked.length < 1) return bar + '<div class="empty">上で投手を選んでください</div>';
@@ -726,11 +758,11 @@ export function mount(ROOT, CORE) {
     const velo = rangeChart(sets.map(s => ({ name: s.name, c: s.c, vals: nums(s.rows, '球速') })), { dec: 1 });
     const spin = rangeChart(sets.map(s => ({ name: s.name, c: s.c, vals: nums(spinOK(s.rows), '回転数') })), { dec: 0 });
     const table = `<div class="card"><h3>数字で比べる<span class="u">選んだ球種をまとめた平均</span></h3><div class="tw"><table>
-      <tr><th>投手</th><th class="n">球数</th>${METRICS.map(m => `<th class="n">${esc(m[0])}</th>`).join('')}</tr>
-      ${sets.map(s => { const x = stats(s.rows); return `<tr><td><span class="sw" style="background:${s.c}"></span>${esc(s.name)} <span class="muted">${esc(s.hand)}</span></td><td class="n">${x.n}</td>${METRICS.map(m => m[1] === 'eff' ? fmtEst(x.eff, '', 0, x.effEst) : `<td class="n">${num(x[m[1]], m[2])}</td>`).join('')}</tr>`; }).join('')}
+      <tr><th>投手</th><th class="n">球数</th>${colsOf('c:col:').map(m => `<th class="n">${esc(m[0])}</th>`).join('')}</tr>
+      ${sets.map(s => { const x = stats(s.rows); return `<tr><td><span class="sw" style="background:${s.c}"></span>${esc(s.name)} <span class="muted">${esc(s.hand)}</span></td><td class="n">${x.n}</td>${colsOf('c:col:').map(m => cell(x, m)).join('')}</tr>`; }).join('')}
       </table></div></div>`;
     return bar + `<div class="note" id="print-head"><b style="font-size:14px">比較</b>　${sets.map(s => esc(s.name)).join('・')}　${F.from || ''}〜${F.to || '現在'}　<span class="muted">作成 ${today()}　取扱注意</span></div>` + legend + table
-      + `<div class="grid2"><div class="card"><h3>変化量<span class="u">大きい点は投手×球種の平均</span></h3>${mv}<div class="note" style="margin:6px 0 0">色の濃さ＝球速（各投手のストレート平均を100%として）。中抜きは軌道から補完した球</div></div><div class="card"><h3>リリース点</h3>${rel}</div><div class="card"><h3>球速</h3>${velo}</div><div class="card"><h3>回転数<span class="u">疑いのある球は除く</span></h3>${spin}</div><div class="card"><h3>コース</h3>${loc}</div></div>`;
+      + `<div class="grid2">${on('c:chart:変化量') ? `<div class="card"><h3>変化量<span class="u">大きい点は投手×球種の平均</span></h3>${mv}<div class="note" style="margin:6px 0 0">色の濃さ＝球速（各投手のストレート平均を100%として）。中抜きは軌道から補完した球</div></div>` : ''}${on('c:chart:リリース点') ? `<div class="card"><h3>リリース点</h3>${rel}</div>` : ''}${on('c:chart:球速') ? `<div class="card"><h3>球速</h3>${velo}</div>` : ''}${on('c:chart:回転数') ? `<div class="card"><h3>回転数<span class="u">疑いのある球は除く</span></h3>${spin}</div>` : ''}${on('c:chart:コース') ? `<div class="card"><h3>コース</h3>${loc}</div>` : ''}</div>`;
   }
 
   /* ================= 描画 ================= */
@@ -756,6 +788,9 @@ export function mount(ROOT, CORE) {
     const g = e.target.closest('[data-goto]'); if (g) { e.preventDefault(); F.player = g.dataset.goto; view = 'player'; render(); return; }
     const tt = e.target.closest('[data-tt]'); if (tt) { F.hideTypes[tt.dataset.tt] = !F.hideTypes[tt.dataset.tt]; render(); return; }
     const cp = e.target.closest('[data-cmp]'); if (cp) { F.cmp[cp.dataset.cmp] = !F.cmp[cp.dataset.cmp]; render(); return; }
+    const sh = e.target.closest('[data-show]'); if (sh) { SHOW[sh.dataset.show] = !on(sh.dataset.show); saveShow(); render(); return; }
+    if (e.target.id === 'tm-showbtn') { F.showPanel = !F.showPanel; render(); return; }
+    if (e.target.id === 'tm-showall') { const pre = { player: 'p:', team: 't:', compare: 'c:' }[e.target.dataset.view]; Object.keys(SHOW).forEach(k => { if (k.startsWith(pre)) delete SHOW[k]; }); Object.keys(DEF_HIDE).forEach(k => { if (k.startsWith(pre)) SHOW[k] = true; }); saveShow(); render(); return; }
     const so = e.target.closest('[data-sort]'); if (so) { if (F.sortKey === so.dataset.sort) F.sortDir = -F.sortDir; else { F.sortKey = so.dataset.sort; F.sortDir = -1; } render(); return; }
     const ds = e.target.closest('[data-delsess]');
     if (ds) { const s = SESSIONS.find(x => String(x['セッションID']) === ds.dataset.delsess); if (!s) return;
