@@ -59,6 +59,11 @@ const CSS = `
 #tab-trackman svg.ch .ax{ stroke:color-mix(in srgb, var(--line) 45%, transparent); stroke-width:.8 }
 #tab-trackman svg.ch .ax0{ stroke:var(--ink2); stroke-width:1; opacity:.5 }
 #tab-trackman svg.ch .zone{ fill:none; stroke:var(--ink2); stroke-width:1.2 }
+#tab-trackman .sim .simrow{ display:grid; grid-template-columns: minmax(0,2.6fr) minmax(0,1fr); gap:14px; align-items:start }
+@media (max-width:820px){ #tab-trackman .sim .simrow{ grid-template-columns:1fr } }
+#tab-trackman .sim th.c1{ background:color-mix(in srgb, var(--accent) 8%, transparent) }
+#tab-trackman .sim th.c2{ background:color-mix(in srgb, var(--clay) 9%, transparent) }
+#tab-trackman .sim th[colspan]{ text-align:center }
 #tab-trackman svg.ch .lab{ font-size:11px; fill:var(--ink2); font-weight:600 }
 #tab-trackman .legend{ display:flex; gap:10px; flex-wrap:wrap; font-size:11.5px; color:var(--ink2); margin:4px 0 6px }
 #tab-trackman .legend .cnt{ color:var(--muted); font-family:var(--num) }
@@ -286,6 +291,133 @@ function sideView(rows, types, o) {
       yy += 13; });
   }
   return s + '</svg>';
+}
+
+/* ================= リリースをそろえたシミュレーション =================
+   球種ごとに「平均の球速・空気抵抗・変化（加速度）」を実測の軌道から取り、
+   ストレートの平均リリース点から投げたことにして計算する。
+   ① ストレートが真ん中に届く角度で、ほかの球種も投げたら → どこに届くか
+   ② 全球種を真ん中に通すなら → リリース角がどれだけ違うか
+   角度を変えても球速と変化は変わらない、という前提の近似（参考値） */
+function trajState(r) {
+  // 変化量（縦・横）を Trackman が計測できていない球は、軌道の式も当てにならないので使わない
+  if (!isNum(r['縦変化量']) || !isNum(r['横変化量'])) return null;
+  const f = trajFn(r); if (!f) return null;
+  const y0 = 15.24, vy = Number(r.vy0), ay = Number(r.ay0);
+  const t = solveT(y0, vy, ay, f.yRel); if (t == null) return null;
+  const vx = -Number(r.vx0) + -Number(r.ax0) * t, vyr = vy + ay * t, vz = Number(r.vz0) + Number(r.az0) * t;
+  return { rel: [f.rel[0], f.yRel, f.rel[1]], V: Math.hypot(vx, vyr, vz), acc: [-Number(r.ax0), ay, Number(r.az0)],
+           vra: Math.atan2(vz, -vyr) * 180 / Math.PI, hra: Math.atan2(vx, -vyr) * 180 / Math.PI, plate: f.plate };
+}
+const D2R = Math.PI / 180;
+function simFly(P, V, A, th, ph) {   // th, ph は度。上向き・x+向きが＋
+  const vy = -V * Math.cos(th * D2R) * Math.cos(ph * D2R), vz = V * Math.sin(th * D2R), vx = V * Math.cos(th * D2R) * Math.sin(ph * D2R);
+  const at = yt => { const t = solveT(P[1], vy, A[1], yt); if (t == null) return null;
+    return [P[0] + vx * t + 0.5 * A[0] * t * t, P[2] + vz * t + 0.5 * A[2] * t * t, t]; };
+  return { at, plate: at(Y_PLATE) };
+}
+function simAim(P, V, A, tx, tz) {
+  let th = 0, ph = 0; const D = P[1] - Y_PLATE;
+  for (let i = 0; i < 40; i++) { const p = simFly(P, V, A, th, ph).plate; if (!p) return null;
+    const ez = tz - p[1], ex = tx - p[0]; th += Math.atan(ez / D) / D2R; ph += Math.atan(ex / D) / D2R;
+    if (Math.abs(ez) < 1e-5 && Math.abs(ex) < 1e-5) break; }
+  return [th, ph];
+}
+function simModel(rows, types) {
+  const M = {}; let sx = 0;
+  types.forEach(t => {
+    const st = rows.filter(r => String(r['球種']) === t).map(r => ({ r, s: trajState(r) })).filter(x => x.s);
+    if (!st.length) return;
+    st.forEach(({ r, s }) => { if (isNum(r['コース横'])) sx += s.plate[0] * Number(r['コース横']); });
+    const S = st.map(x => x.s);
+    M[t] = { n: S.length, V: mean(S.map(s => s.V)), acc: [0, 1, 2].map(i => mean(S.map(s => s.acc[i]))),
+             rel: [0, 1, 2].map(i => mean(S.map(s => s.rel[i]))), vra: mean(S.map(s => s.vra)), hra: mean(S.map(s => s.hra)),
+             kmh: mean(nums(st.map(x => x.r), '球速')) };
+  });
+  return { M, hs: sx < 0 ? -1 : 1 };   // hs：軌道の横向き → 画面に出す横向き
+}
+function simCalc(rows, types, o) {
+  const { M, hs } = simModel(rows, types);
+  const base = M['Fastball'] ? 'Fastball' : types.find(t => M[t]);
+  if (!base) return null;
+  const P = M[base].rel, tz = (o.zone.top + o.zone.bot) / 2;
+  const a0 = simAim(P, M[base].V, M[base].acc, 0, tz); if (!a0) return null;
+  const fbAim = simFly(P, M[base].V, M[base].acc, a0[0], a0[1]);
+  const out = types.filter(t => M[t]).map(t => {
+    const m = M[t];
+    const same = simFly(P, m.V, m.acc, a0[0], a0[1]);
+    const aim = simAim(P, m.V, m.acc, 0, tz);
+    const aimF = aim ? simFly(P, m.V, m.acc, aim[0], aim[1]) : null;
+    const tunA = aimF && aimF.at(o.tun), tunB = fbAim.at(o.tun);
+    return { t, m, same, aim, aimF,
+      dz: same.plate ? (same.plate[1] - tz) * 100 : null, dx: same.plate ? same.plate[0] * hs * 100 : null,
+      th: aim ? aim[0] : null, ph: aim ? aim[1] * hs : null,
+      dth: aim ? aim[0] - a0[0] : null, dph: aim ? (aim[1] - a0[1]) * hs : null,
+      tun: tunA && tunB ? Math.hypot(tunA[0] - tunB[0], tunA[1] - tunB[1]) * 100 : null };
+  });
+  return { base, P, tz, a0: [a0[0], a0[1] * hs], fbAim, rows: out, hs };
+}
+/* 横から見た図（シミュレーション用）。paths: [{c, at, label, sub}] */
+function simSide(S, which, o) {
+  const w = 920, h = 300, L = 34, R = 196, T = 14, B = 26, YL = 18.9, YR = -0.6;
+  const X = y => L + (YL - y) / (YL - YR) * (w - L - R);
+  const Y = z => T + (2.3 - Math.max(-0.05, z)) / 2.3 * (h - T - B);
+  let s = `<svg class="ch" viewBox="0 0 ${w} ${h}">`;
+  for (let y = 18; y >= 0; y -= 3) s += `<line class="ax" x1="${X(y)}" y1="${T}" x2="${X(y)}" y2="${h - B}"/><text x="${X(y)}" y="${h - B + 12}" text-anchor="middle">${y}</text>`;
+  for (let z = 0; z <= 2; z += 0.5) s += `<line class="ax" x1="${L}" y1="${Y(z)}" x2="${X(YR)}" y2="${Y(z)}"/><text x="${L - 3}" y="${Y(z) + 3}" text-anchor="end">${z.toFixed(1)}</text>`;
+  s += `<text x="${(L + X(YR)) / 2}" y="${h - 2}" text-anchor="middle" class="lab">本塁までの距離 m</text>`;
+  s += `<rect x="${X(Y_MOUND) - 2}" y="${Y(0.25)}" width="4" height="${Y(0) - Y(0.25)}" fill="var(--muted)"/>`;
+  s += `<rect x="${X(0.43)}" y="${Y(0.04)}" width="${X(0) - X(0.43)}" height="${Y(0) - Y(0.04)}" fill="var(--muted)"/>`;
+  s += `<rect x="${X(0.43)}" y="${Y(o.zone.top)}" width="${X(-0.3) - X(0.43)}" height="${Y(o.zone.bot) - Y(o.zone.top)}" fill="var(--accent)" opacity=".13"/>`;
+  s += `<line x1="${X(o.tun)}" y1="${T}" x2="${X(o.tun)}" y2="${h - B}" stroke="var(--accent)" stroke-width="1.2" stroke-dasharray="5 4"/>`;
+  s += `<text x="${X(o.tun) - 4}" y="${T + 10}" text-anchor="end" style="fill:var(--accent);font-weight:600">トンネル点 ${o.tun} m</text>`;
+  // 狙い（真ん中の高さ）
+  s += `<line x1="${X(0.9)}" y1="${Y(S.tz)}" x2="${X(YR)}" y2="${Y(S.tz)}" stroke="var(--ink2)" stroke-width="1" stroke-dasharray="3 3"/>`;
+  const ys = []; for (let y = S.P[1]; y > Y_PLATE; y -= 0.25) ys.push(y); ys.push(Y_PLATE);
+  const labs = [];
+  // ストレートを最後に描く（上に重ねる）
+  const order = S.rows.slice().sort((a, b) => (a.t === S.base) - (b.t === S.base));
+  order.forEach(r => {
+    const f = which === 'same' ? r.same : r.aimF; if (!f || !f.plate) return;
+    const pts = ys.map(y => [y, f.at(y)]).filter(p => p[1]);
+    const c = o.color(r.t), isB = r.t === S.base;
+    s += `<polyline fill="none" stroke="${c}" stroke-width="${isB ? 3.2 : 2.6}" stroke-linecap="round" ${isB ? '' : 'opacity=".95"'} points="${pts.map(([y, p]) => X(y).toFixed(1) + ',' + Y(p[1]).toFixed(1)).join(' ')}"/>`;
+    s += `<circle cx="${X(Y_PLATE).toFixed(1)}" cy="${Y(f.plate[1]).toFixed(1)}" r="3.5" fill="${c}" stroke="#fff" stroke-width="1"/>`;
+    labs.push({ r, z: f.plate[1], c });
+  });
+  s += `<circle cx="${X(S.P[1]).toFixed(1)}" cy="${Y(S.P[2]).toFixed(1)}" r="5" fill="var(--ink)" stroke="#fff" stroke-width="1.5"/>`;
+  s += `<text x="${X(S.P[1]) + 2}" y="${Y(S.P[2]) + (which === 'aim' ? 40 : -8)}" class="lab">そろえたリリース点（ストレートの平均）</text>`;
+  // 右のラベル
+  const pm = v => (v >= 0 ? '+' : '−') + Math.abs(v);
+  if (which === 'same') {
+    labs.sort((a, b) => b.z - a.z); let prev = -1e9; const rowH = 24;
+    labs.forEach(l => { let yy = Y(l.z); if (yy - prev < rowH) yy = prev + rowH; prev = yy; l.y = yy; });
+    labs.forEach(({ r, z, y, c }) => {
+      const main = r.t === S.base ? '基準（真ん中）' : `${pm(Math.round(r.dz))} cm${z < 0 ? '（ワンバウンド）' : ''}`;
+      s += `<line x1="${X(Y_PLATE)}" y1="${Y(z)}" x2="${X(YR) + 4}" y2="${y - 3}" stroke="${c}" stroke-width=".8" opacity=".6"/>`
+         + `<text x="${X(YR) + 6}" y="${y}" class="lab" style="fill:${c}">${esc(o.jtype(r.t))} ${esc(main)}</text>`;
+    });
+  } else {
+    const rl = labs.slice().sort((a, b) => (b.r.th || 0) - (a.r.th || 0));
+    let yy = T + 26;
+    s += `<text x="${X(YR) + 6}" y="${T + 10}" class="lab" style="fill:var(--muted)">真ん中に通すリリース角（縦）</text>`;
+    rl.forEach(({ r, c }) => {
+      const d = r.t === S.base ? '基準' : `${pm(r.dth.toFixed(1))}°`;
+      s += `<circle cx="${X(YR) + 10}" cy="${yy - 4}" r="3.5" fill="${c}"/><text x="${X(YR) + 18}" y="${yy}" class="lab" style="fill:${c}">${esc(o.jtype(r.t))} ${r.th.toFixed(1)}°（${d}）</text>`;
+      yy += 18;
+    });
+  }
+  return s + '</svg>';
+}
+/* 捕手から見た到達点（①） */
+function simZone(S, o) {
+  const pts = S.rows.filter(r => r.same.plate).map(r => ({ x: r.same.plate[0] * S.hs, y: r.same.plate[1], c: o.color(r.t), r: 6, o: 1, stroke: 'var(--paper)',
+    label: o.jtype(r.t), t: `${o.jtype(r.t)} 高さ ${r.dz.toFixed(0)}cm 横 ${r.dx.toFixed(0)}cm` }));
+  return scatter({ w: 300, h: 300, xr: [-0.9, 0.9], yr: [-0.3, 1.5], xticks: 6, yticks: 6, xl: '横 m（捕手から見て）', yl: '高さ m', zero: false, xlabels: o.xlabels,
+    extra: (X, Y) => `<rect class="zone" x="${X(-o.zone.side)}" y="${Y(o.zone.top)}" width="${X(o.zone.side) - X(-o.zone.side)}" height="${Y(o.zone.bot) - Y(o.zone.top)}"/>`
+      + `<line class="ax0" x1="${X(-0.9)}" y1="${Y(0)}" x2="${X(0.9)}" y2="${Y(0)}"/><text x="${X(-0.88)}" y="${Y(0) - 3}">地面</text>`
+      + `<line x1="${X(-0.06)}" y1="${Y(S.tz)}" x2="${X(0.06)}" y2="${Y(S.tz)}" stroke="var(--ink)" stroke-width="1.5"/><line x1="${X(0)}" y1="${Y(S.tz - 0.06)}" x2="${X(0)}" y2="${Y(S.tz + 0.06)}" stroke="var(--ink)" stroke-width="1.5"/>`,
+    pts });
 }
 
 /* CSVの1行 → 保存する1行。flip=true で横方向をすべて反転 */
@@ -710,7 +842,8 @@ export function mount(ROOT, CORE) {
   const ITEMS = {
     player: [['その他', [['p:kpi', '上の数字（球数・平均球速など）'], ['p:table', '球種別の表'], ['p:sess', '取り込みの一覧']]],
              ['表の列', METRICS.map(m => ['p:col:' + m[0], m[0]])],
-             ['グラフ', ['変化量', '軌道（横から・トンネル）', 'リリース点', 'リリース高さ×エクステンション', '球速の分布', 'コース', '球速の推移', '縦変化量の推移', '横変化量の推移', '回転数の推移', '回転効率'].map(n => ['p:chart:' + n, n])]],
+             ['グラフ', ['変化量', '軌道（横から・トンネル）', 'リリースをそろえたシミュレーション', 'リリース点', 'リリース高さ×エクステンション', '球速の分布', 'コース', '球速の推移', '縦変化量の推移', '横変化量の推移', '回転数の推移', '回転効率'].map(n => ['p:chart:' + n, n])],
+             ['シミュレーションの中身', [['p:sim:same', '① 同じ角度で投げた図'], ['p:sim:zone', '① 捕手から見た到達点'], ['p:sim:aim', '② 真ん中に通す図'], ['p:sim:table', '表']]]],
     team:   [['表の列', METRICS.map(m => ['t:col:' + m[0], m[0]])],
              ['その他', [['t:scatter', '散布図'], ['t:alltypes', '球種ごとの球速と回転数']]]],
     compare:[['表の列', METRICS.map(m => ['c:col:' + m[0], m[0]])],
@@ -745,6 +878,34 @@ export function mount(ROOT, CORE) {
   }
   function typeChips(types, rows) {
     return `<div class="chips noprint" style="margin-bottom:10px">${types.map(t => `<button class="chip" data-tt="${esc(t)}" aria-pressed="${!F.hideTypes[t]}"><span class="sw" style="background:${typeColor(t)}"></span>${esc(jtype(t))} <span class="muted">${rows.filter(r => String(r['球種']) === t).length}</span></button>`).join('')}</div>`;
+  }
+  function simCard(rows, types) {
+    const o = { tun: tunnelDist(), zone: zone(), color: typeColor, jtype, xlabels: sideLabels() };
+    const S = simCalc(rows, types, o);
+    const head = `<h3>リリースをそろえたシミュレーション<span class="u">参考値。ストレートの平均リリース点から、各球種の平均の球速・変化で投げたとして計算</span></h3>`;
+    if (!S || S.rows.length < 2) return `<div class="card" style="grid-column:1 / -1">${head}<div class="empty">計算できる球種が2つ以上ありません（リリース・エクステンション・軌道がそろって計測できた球だけを使います）</div></div>`;
+    const side = v => { if (!isNum(v)) return '—'; const a = Math.round(Math.abs(v)); return a === 0 ? '0' : `${sideLabels()[v > 0 ? 1 : 0]} ${a}`; };
+    const pm = (v, d) => !isNum(v) ? '—' : (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v).toFixed(d);
+    const tb = `<div class="tw"><table>
+      <tr><th rowspan="2">球種</th><th class="n" rowspan="2">球数</th><th class="n" rowspan="2">球速</th>
+        <th colspan="2" class="c1">① ストレートと同じ角度で投げたら</th><th colspan="3" class="c2">② 真ん中に通すなら</th><th class="n" rowspan="2">実際の<br>リリース角 縦</th></tr>
+      <tr><th class="n c1">高さの差 cm</th><th class="n c1">横の差 cm</th><th class="n c2">リリース角 縦</th><th class="n c2">ストレートとの差</th><th class="n c2">トンネル点での差 cm</th></tr>
+      ${S.rows.map(r => { const isB = r.t === S.base; return `<tr><td><span class="sw" style="background:${typeColor(r.t)}"></span>${esc(jtype(r.t))}${isB ? ' <small class="muted">基準</small>' : ''}</td>
+        <td class="n">${r.m.n}${r.m.n < 3 ? '<small>少</small>' : ''}</td><td class="n">${num(r.m.kmh, 1)}</td>
+        <td class="n">${isB ? '0' : pm(Math.round(r.dz), 0)}${r.same.plate && r.same.plate[1] < 0 ? '<small>ワンバン</small>' : ''}</td><td class="n">${isB ? '0' : side(r.dx)}</td>
+        <td class="n">${num(r.th, 1)}°</td><td class="n">${isB ? '—' : pm(r.dth, 1) + '°'}</td><td class="n">${isB ? '—' : num(r.tun, 0)}</td>
+        <td class="n">${num(r.m.vra, 1)}°</td></tr>`; }).join('')}
+      ${types.filter(t => !S.rows.some(r => r.t === t)).map(t => `<tr class="muted"><td><span class="sw" style="background:${typeColor(t)}"></span>${esc(jtype(t))}</td><td class="n">0</td><td colspan="7">データなし（変化量・リリース・軌道がそろって計測できた球がありません）</td></tr>`).join('')}
+      </table></div>`;
+    const pSame = on('p:sim:same') ? `<div><div class="note" style="margin:0 0 4px"><b>① ストレートが真ん中の高さに届く角度（縦 ${S.a0[0].toFixed(1)}°）で、ほかの球種も投げたら</b>　どこまで落ちる・曲がるか</div>${simSide(S, 'same', o)}</div>` : '';
+    const pZone = on('p:sim:zone') ? `<div><div class="note" style="margin:0 0 4px"><b>捕手から見た到達点（①）</b>　＋が真ん中</div>${simZone(S, o)}</div>` : '';
+    const pAim = on('p:sim:aim') ? `<div class="note" style="margin:10px 0 4px"><b>② 全球種を真ん中（高さ ${S.tz.toFixed(2)} m）に通すなら</b>　リリースでどれだけ上（下）に投げ出す必要があるか</div>${simSide(S, 'aim', o)}` : '';
+    const row1 = pSame && pZone ? `<div class="simrow">${pSame}${pZone}</div>` : pSame ? pSame : pZone ? `<div style="max-width:420px">${pZone}</div>` : '';
+    if (!row1 && !pAim && !on('p:sim:table')) return '';
+    return `<div class="card sim" style="grid-column:1 / -1">${head}
+      ${row1}${pAim}
+      ${on('p:sim:table') ? tb : ''}
+      <div class="note" style="margin:6px 0 0">角度は上向きが＋。投げ出しの角度が1°違うと、本塁では約30cmずれます。②の「ストレートとの差」が小さいほど、リリース直後は打者から見分けにくい球です。「実際のリリース角」はTrackmanの計測（それぞれの球種のリリース点・コースのまま）なので、②の値とは一致しません。「少」は使えた球が3球未満で、数字がぶれやすい球種です。<br>球速と変化は狙う角度を変えても同じ、という前提の近似です。実際に同じリリースで投げ分けられるかは別なので、数字は参考にしてください。</div></div>`;
   }
   function viewPlayer() {
     if (!F.player) return '<div class="empty">投手が登録されていません。「記録」タブの名簿で投手に印を付けてください。</div>';
@@ -783,6 +944,7 @@ export function mount(ROOT, CORE) {
       '変化量': () => `<div class="card"><h3>変化量<span class="u">横 × 縦 cm。大きい点は球種ごとの平均</span></h3>${scatter({ xr: [-70, 70], yr: [-70, 70], xl: '横変化量 cm', yl: '縦変化量 cm', xticks: 7, yticks: 7, pts: ptsMv, means: meansMv, xlabels: sideLabels() })}<div class="note" style="margin:6px 0 0">${shadeNote}</div></div>`,
       'リリース点': () => `<div class="card"><h3>リリース点<span class="u">横 × 高さ m</span></h3>${scatter({ xr: [-1.2, 1.2], yr: [1.0, 2.2], xl: 'リリース横幅 m', yl: 'リリース高さ m', xticks: 6, yticks: 6, pts: ptsRel, xlabels: sideLabels() })}</div>`,
       '軌道（横から・トンネル）': () => `<div class="card" style="grid-column:1 / -1"><h3>軌道（横から）とピッチトンネル<span class="u">細い線＝1球、太い線＝球種の平均。トンネル点の縦線はストレートとの離れ</span></h3>${sideView(vis, types.filter(t => !F.hideTypes[t]), { tun: tunnelDist(), zone: zone(), color: typeColor, jtype })}<div class="note" style="margin:6px 0 0">トンネル点＝打者が振るか決めるとされる地点（本塁まで ${tunnelDist()} m、到達の約0.2秒前）。ストレートとの離れが、トンネル点で小さく本塁で大きいほど見分けにくい球です。離れは球種の平均軌道どうしで測っています。</div></div>`,
+      'リリースをそろえたシミュレーション': () => simCard(vis, types.filter(t => !F.hideTypes[t])),
       'リリース高さ×エクステンション': () => `<div class="card"><h3>リリース高さ × エクステンション<span class="u">前に出るほど右、高いほど上 m</span></h3>${scatter({ xr: [1.2, 2.4], yr: [1.0, 2.2], xl: 'エクステンション m', yl: 'リリース高さ m', xticks: 6, yticks: 6, pts: ptsExt, zero: false })}</div>`,
       '球速の分布': () => `<div class="card"><h3>球速の分布<span class="u">最小〜最大、太線は平均±1σ</span></h3>${rangeChart(veloG, { unit: 'km/h', dec: 1 })}</div>`,
       'コース': () => `<div class="card"><h3>コース<span class="u">捕手から見て。枠がゾーン</span></h3>${zoneChart(ptsLoc, zone(), { xlabels: sideLabels() })}</div>`,
