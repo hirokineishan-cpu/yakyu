@@ -1,5 +1,6 @@
 /* Trackman（投手のみ・強化と管理だけ）
-   取り込み：投手を選んでCSVを上げる。中身の確認、軌道からの補完、回転数の取りこぼし検出
+   取り込み：投手を選んでCSVを上げる。中身の確認、回転数の取りこぼし検出
+   数字は Trackman が計測したものだけを使う（空欄を計算で埋めることはしない）
    個人　　：1投手の球種別の表とグラフ（変化量・リリース点・球速・コース・推移）
    チーム　：全投手を並べて比べる
    比較　　：数人を同じ図に重ねる                                        */
@@ -210,7 +211,9 @@ function trajFn(r) {
   const y0 = 15.24, x0 = -Number(r.x0), z0 = Number(r.z0), vx = -Number(r.vx0), vy = Number(r.vy0), vz = Number(r.vz0);
   const ax = -Number(r.ax0), ay = Number(r.ay0), az = Number(r.az0);
   const at = yt => { const t = solveT(y0, vy, ay, yt); if (t == null) return null; return [x0 + vx * t + 0.5 * ax * t * t, z0 + vz * t + 0.5 * az * t * t]; };
-  const ext = isNum(r['エクステンション']) ? Number(r['エクステンション']) : 1.75;
+  // 計測できていない球は描かない（エクステンション・リリース高さ・コース高さがそろった球だけ）
+  if (!isNum(r['エクステンション']) || !isNum(r['リリース高さ']) || !isNum(r['コース高さ'])) return null;
+  const ext = Number(r['エクステンション']);
   const yRel = Y_MOUND - ext, rel = at(yRel), pl = at(Y_PLATE);
   if (!rel || !pl || pl[1] < 0 || pl[1] > 3 || Math.abs(pl[0]) > 1.5) return null;
   return { at, yRel, rel, plate: pl };
@@ -290,17 +293,9 @@ const KIND_OF = pt => /LiveBp|Game/i.test(pt || '') ? '対戦' : 'ブルペン';
 function toRow(rec, ctx) {
   const sx = ctx.flip ? -1 : 1;
   const h = v => (isNum(v) ? Number(v) * sx : '');
-  const ext = isNum(rec.Extension) ? Number(rec.Extension) : ctx.extFallback;
-  const tj = trajectory(rec, ext);
-  const filled = [];
-  const LIM = { '縦変化量': [-120, 120], '横変化量': [-120, 120], '総縦変化': [-320, 40], 'リリース角縦': [-20, 20], 'リリース角横': [-20, 20],
-    '入射角縦': [-25, 5], '入射角横': [-20, 20], 'コース高さ': [-0.5, 3], 'コース横': [-1.5, 1.5], 'リリース高さ': [0.5, 2.5], 'リリース横幅': [-1.5, 1.5] };
-  const pick = (measured, calc, name, round) => {
-    if (isNum(measured)) return round(measured);
-    const lim = LIM[name];
-    if (tj && isNum(calc) && (!lim || (calc >= lim[0] && calc <= lim[1]))) { filled.push(name); return round(calc); }
-    return '';
-  };
+  /* Trackman が計測した値だけを使う。空欄は空欄のまま（計算で埋めない） */
+  const pick = (measured, _calc, _name, round) => isNum(measured) ? round(measured) : '';
+  const tj = null;
   const row = {
     '計測ID': uid('tm-'), '投手ID': ctx.pid, 'セッションID': ctx.sid,
     '測定日': ctx.date, '時刻': String(rec.Time || ''), '球番号': f(rec.PitchNo),
@@ -311,7 +306,7 @@ function toRow(rec, ctx) {
     '回転軸': r1(f(rec.SpinAxis)), '傾き': String(rec.Tilt || ''),
     'リリース高さ': pick(f(rec.RelHeight), tj && tj.relZ, 'リリース高さ', r3),
     'リリース横幅': pick(h(rec.RelSide), tj && isNum(tj.relX) ? tj.relX * sx : '', 'リリース横幅', r3),
-    'エクステンション': isNum(rec.Extension) ? r3(rec.Extension) : (isNum(ext) ? (filled.push('エクステンション'), r3(ext)) : ''),
+    'エクステンション': isNum(rec.Extension) ? r3(rec.Extension) : '',
     '縦変化量': pick(f(rec.InducedVertBreak), tj && tj.ivb, '縦変化量', r1),
     '横変化量': pick(h(rec.HorzBreak), tj && isNum(tj.hb) ? tj.hb * sx : '', '横変化量', r1),
     '総縦変化': pick(f(rec.VertBreak), tj && tj.vb, '総縦変化', r1),
@@ -329,7 +324,6 @@ function toRow(rec, ctx) {
     'x0': r3(f(rec.x0)), 'z0': r3(f(rec.z0)), 'vx0': r3(f(rec.vx0)), 'vy0': r3(f(rec.vy0)), 'vz0': r3(f(rec.vz0)),
     'ax0': r3(f(rec.ax0)), 'ay0': r3(f(rec.ay0)), 'az0': r3(f(rec.az0))
   };
-  row['補完'] = filled.join(',');
   return row;
 }
 
@@ -495,7 +489,7 @@ export function mount(ROOT, CORE) {
   const tunnelDist = () => Number(SETTINGS['トンネル距離']) || 7.25;
   const rhSign = () => (String(SETTINGS['右投げの符号'] || '+') === '-' ? -1 : 1);
   const sideLabels = () => String(SETTINGS['コース+側'] || '三塁側') === '一塁側' ? ['三塁側', '一塁側'] : ['一塁側', '三塁側'];
-  const isEst = (r, k) => String(r['補完'] || '').split(',').indexOf(k) >= 0;
+  const isEst = () => false;   // 計算で埋めた値はもう無い
   const eff = r => isNum(r['回転効率']) ? { v: Number(r['回転効率']), est: false } : null;   // 回転効率：Trackmanの実測だけを使う（推定はしない）
 
   /* ---- 端末に残っているもので先に出す ---- */
@@ -520,7 +514,12 @@ export function mount(ROOT, CORE) {
       .sort((a, b) => Number(a['順'] || 0) - Number(b['順'] || 0));
     if (PITCHERS.length && !PITCHERS.some(p => String(p['選手ID']) === F.player)) F.player = String(PITCHERS[0]['選手ID']);
   }
-  function applyTm(p) { SESSIONS = p.sessions || []; ROWS = p.rows || []; SETTINGS = p.settings || {}; }
+  /* 以前の版で、空欄を軌道から計算して埋めた値（「補完」の列に名前が入っている）は使わない。データなしにする */
+  function dropFilled(rows) {
+    (rows || []).forEach(r => { const ks = String(r['補完'] || '').split(',').filter(Boolean); ks.forEach(k => { r[k] = ''; }); if (ks.length) r['補完'] = ''; });
+    return rows || [];
+  }
+  function applyTm(p) { SESSIONS = p.sessions || []; ROWS = dropFilled(p.rows); SETTINGS = p.settings || {}; }
   /* 選手本人だけの名簿を作る */
   function applySelf(me) {
     if (!me || !me.pid) return;
@@ -592,15 +591,13 @@ export function mount(ROOT, CORE) {
     const expect = (hand === '左' ? -1 : 1) * rhSign();
     q.ms = ms; q.handWarn = (ms != null && sides.length >= 3 && Math.sign(ms) !== expect);
     q.dup = q.rows.filter(r => r['PlayID'] && ROWS.some(x => x['PlayID'] === r['PlayID'])).length;
-    q.filled = q.rows.filter(r => r['補完']).length; q.spinBad = q.rows.filter(r => r['回転数疑い']).length;
+    q.missBrk = q.rows.filter(r => !isNum(r['縦変化量'])).length; q.spinBad = q.rows.filter(r => r['回転数疑い']).length;
     q.dates = [...new Set(q.rows.map(r => r['測定日']))].sort();
   };
   function buildQ(q) {
-    const exts = q.recs.map(r => Number(r.Extension)).filter(isNum);
-    const extFallback = exts.length ? median(exts) : 1.75;
     const first = q.recs.map(r => normDate(r.Date)).filter(Boolean).sort()[0] || today();
     q.sid = q.sid || uid('ts-'); q.date = first;
-    q.rows = q.recs.map(r => toRow(r, { pid: q.pid, sid: q.sid, kind: q.kind, flip: q.flip, extFallback, date: normDate(r.Date) || first }));
+    q.rows = q.recs.map(r => toRow(r, { pid: q.pid, sid: q.sid, kind: q.kind, flip: q.flip, date: normDate(r.Date) || first }));
     flagSpin(q.rows); summarize(q);
   }
   async function addFiles(pid, files) {
@@ -632,7 +629,7 @@ export function mount(ROOT, CORE) {
         <div class="muted" style="font-size:11.5px; margin-top:4px">
           ${q.ms != null ? (q.handWarn ? `<span class="pill bad">${esc(hand)}投げの選手に${hand === '右' ? '左' : '右'}投げの形のデータ（リリース横幅 ${num(q.ms, 2)} m）</span> 選手が違う可能性が高いです。`
                                        : `投げ手 一致（${esc(hand)}投・${num(q.ms, 2)} m）`) : '投げ手 判定できず'}
-          　軌道から補完 ${q.filled}球　回転数の疑い ${q.spinBad}球${q.dup ? `　<b>すでに入っている ${q.dup}球</b>（飛ばします）` : ''}
+          ${q.missBrk ? `　変化量が計測されていない ${q.missBrk}球（データなしとして扱います）` : ''}　回転数の疑い ${q.spinBad}球${q.dup ? `　<b>すでに入っている ${q.dup}球</b>（飛ばします）` : ''}
           ${q.status && !q.done ? `　<b style="color:var(--accent)">${esc(q.status)}</b>` : ''}
         </div>
         ${q.handWarn && !q.done ? `<div class="noprint" style="margin-top:4px"><label class="c"><input type="checkbox" data-qforce="${q.id}" ${q.force ? 'checked' : ''}> それでも取り込む</label>　<label class="c"><input type="checkbox" data-qflip="${q.id}" ${q.flip ? 'checked' : ''}> 左右を反転して取り込む（機器の向きが逆だと分かっているときだけ）</label></div>` : ''}
@@ -771,13 +768,13 @@ export function mount(ROOT, CORE) {
     const ref = veloRef(all);
     const col = r => shade(typeColor(r['球種']), ref ? Number(r['球速']) / ref : null);
     const vt = r => `${jtype(r['球種'])} ${r['測定日']} ${num(r['球速'], 1)}km/h${ref && isNum(r['球速']) ? `（${Math.round(r['球速'] / ref * 100)}%）` : ''}`;
-    const ptsMv = vis.map(r => ({ x: r['横変化量'], y: r['縦変化量'], c: col(r), hollow: isEst(r, '縦変化量'), t: `${vt(r)} 縦${num(r['縦変化量'], 0)} 横${num(r['横変化量'], 0)}${isEst(r, '縦変化量') ? '（補完）' : ''}` }));
+    const ptsMv = vis.map(r => ({ x: r['横変化量'], y: r['縦変化量'], c: col(r), hollow: isEst(r, '縦変化量'), t: `${vt(r)} 縦${num(r['縦変化量'], 0)} 横${num(r['横変化量'], 0)}` }));
     const meansMv = types.filter(t => !F.hideTypes[t]).map(t => { const rs = all.filter(r => String(r['球種']) === t); const x = mean(nums(rs, '横変化量')), y = mean(nums(rs, '縦変化量'));
       return { x, y, c: typeColor(t), label: jtype(t), t: `${jtype(t)} 平均 縦${num(y, 0)} 横${num(x, 0)}（${nums(rs, '縦変化量').length}球）` }; });
     const ptsRel = vis.map(r => ({ x: r['リリース横幅'], y: r['リリース高さ'], c: col(r), hollow: isEst(r, 'リリース高さ'), t: `${vt(r)} 横${num(r['リリース横幅'], 2)} 高${num(r['リリース高さ'], 2)}` }));
     const ptsLoc = vis.map(r => ({ x: r['コース横'], y: r['コース高さ'], c: col(r), hollow: isEst(r, 'コース高さ'), t: vt(r) }));
     const ptsExt = vis.map(r => ({ x: r['エクステンション'], y: r['リリース高さ'], c: col(r), hollow: isEst(r, 'エクステンション') || isEst(r, 'リリース高さ'), t: `${vt(r)} エクステ${num(r['エクステンション'], 2)} 高${num(r['リリース高さ'], 2)}` }));
-    const shadeNote = ref ? `色の濃さ＝球速（ストレート平均 ${num(ref, 1)} km/h を100%として）。中抜きの点は軌道から補完した球` : '中抜きの点は軌道から補完した球';
+    const shadeNote = ref ? `色の濃さ＝球速（ストレート平均 ${num(ref, 1)} km/h を100%として）。Trackman が計測できなかった球は出していません` : 'Trackman が計測できなかった球は出していません';
     const veloG = types.filter(t => !F.hideTypes[t]).map(t => ({ name: jtype(t), c: typeColor(t), vals: nums(all.filter(r => String(r['球種']) === t), '球速') }));
     const byDate = k => types.filter(t => !F.hideTypes[t]).map(t => { const rs = all.filter(r => String(r['球種']) === t && isNum(r[k]) && (k !== '回転数' || !r['回転数疑い']));
       const dates = [...new Set(rs.map(r => r['測定日']))].sort();
@@ -878,7 +875,7 @@ export function mount(ROOT, CORE) {
       ${sets.map(s => { const x = stats(s.rows); return `<tr><td><span class="sw" style="background:${s.c}"></span>${esc(s.name)} <span class="muted">${esc(s.hand)}</span></td><td class="n">${x.n}</td>${colsOf('c:col:').map(m => cell(x, m)).join('')}</tr>`; }).join('')}
       </table></div></div>`;
     return bar + `<div class="note" id="print-head"><b style="font-size:14px">比較</b>　${sets.map(s => esc(s.name)).join('・')}　${F.from || ''}〜${F.to || '現在'}　<span class="muted">作成 ${today()}　取扱注意</span></div>` + legend + table
-      + `<div class="grid2">${on('c:chart:変化量') ? `<div class="card"><h3>変化量<span class="u">大きい点は投手×球種の平均</span></h3>${mv}<div class="note" style="margin:6px 0 0">色の濃さ＝球速（各投手のストレート平均を100%として）。中抜きは軌道から補完した球</div></div>` : ''}${on('c:chart:リリース点') ? `<div class="card"><h3>リリース点</h3>${rel}</div>` : ''}${on('c:chart:リリース高さ×エクステンション') ? `<div class="card"><h3>リリース高さ × エクステンション</h3>${ext}</div>` : ''}${on('c:chart:球速') ? `<div class="card"><h3>球速</h3>${velo}</div>` : ''}${on('c:chart:回転数') ? `<div class="card"><h3>回転数<span class="u">疑いのある球は除く</span></h3>${spin}</div>` : ''}${on('c:chart:コース') ? `<div class="card"><h3>コース</h3>${loc}</div>` : ''}</div>`;
+      + `<div class="grid2">${on('c:chart:変化量') ? `<div class="card"><h3>変化量<span class="u">大きい点は投手×球種の平均</span></h3>${mv}<div class="note" style="margin:6px 0 0">色の濃さ＝球速（各投手のストレート平均を100%として）。計測できなかった球は出していません</div></div>` : ''}${on('c:chart:リリース点') ? `<div class="card"><h3>リリース点</h3>${rel}</div>` : ''}${on('c:chart:リリース高さ×エクステンション') ? `<div class="card"><h3>リリース高さ × エクステンション</h3>${ext}</div>` : ''}${on('c:chart:球速') ? `<div class="card"><h3>球速</h3>${velo}</div>` : ''}${on('c:chart:回転数') ? `<div class="card"><h3>回転数<span class="u">疑いのある球は除く</span></h3>${spin}</div>` : ''}${on('c:chart:コース') ? `<div class="card"><h3>コース</h3>${loc}</div>` : ''}</div>`;
   }
 
   /* ================= 描画 ================= */
