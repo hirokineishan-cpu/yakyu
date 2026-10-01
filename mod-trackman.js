@@ -82,6 +82,13 @@ const CSS = `
 html.prt #tab-trackman .hd .sp, html.prt #tab-trackman .seg, html.prt #tab-trackman .bar, html.prt #tab-trackman .noprint{ display:none !important }
 html.prt #tab-trackman .pw{ max-width:none; padding:0 }
 html.prt #tab-trackman .card{ break-inside:avoid; box-shadow:none }
+/* 印刷では表を横スクロールにせず、文字を小さくして用紙の幅に全部の列を収める */
+html.prt #tab-trackman .tw{ overflow:visible }
+html.prt #tab-trackman table{ font-size:9.5px }
+html.prt #tab-trackman th, html.prt #tab-trackman td{ padding:3px 3px }
+html.prt #tab-trackman th{ font-size:8.5px; letter-spacing:0; white-space:normal; vertical-align:bottom; line-height:1.25 }
+html.prt #tab-trackman td.n, html.prt #tab-trackman th.n{ font-size:10px }
+html.prt #tab-trackman td.n small{ font-size:7.5px; margin-left:1px }
 `;
 
 /* ================= 小道具 ================= */
@@ -192,6 +199,90 @@ function trajectory(rec, ext) {
     }
   }
   return out;
+}
+
+/* 保存した行（x0..az0 と エクステンション）から、本塁までの距離 y → [横, 高さ] を返す。
+   横は保存時の符号（報告値と同じ向き）に揃える。投球としてありえない軌道は null */
+function trajFn(r) {
+  const P = ['x0', 'z0', 'vx0', 'vy0', 'vz0', 'ax0', 'ay0', 'az0'];
+  if (!P.every(k => isNum(r[k]))) return null;
+  if (Math.abs(r.x0) > 2 || r.z0 < 0.3 || r.z0 > 3 || r.vy0 > -15 || r.vy0 < -55 || r.ay0 < 0) return null;
+  const y0 = 15.24, x0 = -Number(r.x0), z0 = Number(r.z0), vx = -Number(r.vx0), vy = Number(r.vy0), vz = Number(r.vz0);
+  const ax = -Number(r.ax0), ay = Number(r.ay0), az = Number(r.az0);
+  const at = yt => { const t = solveT(y0, vy, ay, yt); if (t == null) return null; return [x0 + vx * t + 0.5 * ax * t * t, z0 + vz * t + 0.5 * az * t * t]; };
+  const ext = isNum(r['エクステンション']) ? Number(r['エクステンション']) : 1.75;
+  const yRel = Y_MOUND - ext, rel = at(yRel), pl = at(Y_PLATE);
+  if (!rel || !pl || pl[1] < 0 || pl[1] > 3 || Math.abs(pl[0]) > 1.5) return null;
+  return { at, yRel, rel, plate: pl };
+}
+
+/* 横から見た軌道（ピッチトンネル）。rows は同じ投手の球。types は描く球種の順 */
+function sideView(rows, types, o) {
+  const w = 920, h = 340, L = 34, R = 190, T = 14, B = 26, YL = 18.9, YR = -0.6;
+  const X = y => L + (YL - y) / (YL - YR) * (w - L - R);
+  const Y = z => T + (2.3 - z) / 2.3 * (h - T - B);
+  const grid = []; for (let y = 17.4; y >= Y_PLATE - 1e-9; y -= 0.45) grid.push(y); grid.push(Y_PLATE);
+  const by = {};
+  rows.forEach(r => { const f = trajFn(r); if (!f) return; (by[String(r['球種'])] = by[String(r['球種'])] || []).push({ r, f }); });
+  let s = `<svg class="ch" viewBox="0 0 ${w} ${h}">`;
+  for (let y = 18; y >= 0; y -= 3) s += `<line class="ax" x1="${X(y)}" y1="${T}" x2="${X(y)}" y2="${h - B}"/><text x="${X(y)}" y="${h - B + 12}" text-anchor="middle">${y}</text>`;
+  for (let z = 0; z <= 2; z += 0.5) s += `<line class="ax" x1="${L}" y1="${Y(z)}" x2="${X(YR)}" y2="${Y(z)}"/><text x="${L - 3}" y="${Y(z) + 3}" text-anchor="end">${z.toFixed(1)}</text>`;
+  s += `<text x="${(L + X(YR)) / 2}" y="${h - 2}" text-anchor="middle" class="lab">本塁までの距離 m</text>`;
+  // マウンドのプレート、本塁、ゾーン
+  s += `<rect x="${X(Y_MOUND) - 2}" y="${Y(0.25)}" width="4" height="${Y(0) - Y(0.25)}" fill="var(--muted)"/>`;
+  s += `<rect x="${X(0.43)}" y="${Y(0.04)}" width="${X(0) - X(0.43)}" height="${Y(0) - Y(0.04)}" fill="var(--muted)"/>`;
+  s += `<rect x="${X(0.43)}" y="${Y(o.zone.top)}" width="${X(-0.3) - X(0.43)}" height="${Y(o.zone.bot) - Y(o.zone.top)}" fill="var(--accent)" opacity=".13"/>`;
+  s += `<line x1="${X(0)}" y1="${Y(o.zone.top)}" x2="${X(0)}" y2="${Y(o.zone.bot)}" stroke="var(--accent)" stroke-width="2"/>`;
+  // トンネル点
+  s += `<line x1="${X(o.tun)}" y1="${T}" x2="${X(o.tun)}" y2="${h - B}" stroke="var(--accent)" stroke-width="1.2" stroke-dasharray="5 4"/>`;
+  s += `<text x="${X(o.tun) - 4}" y="${T + 10}" text-anchor="end" style="fill:var(--accent);font-weight:600">トンネル点 ${o.tun} m</text>`;
+  // 1球ずつ（細く）
+  types.forEach(t => (by[t] || []).forEach(({ f }) => {
+    const pts = grid.filter(y => y <= f.yRel).map(y => f.at(y)).filter(Boolean);
+    const d = [[f.yRel, f.rel]].concat(grid.filter(y => y <= f.yRel).map(y => [y, f.at(y)]).filter(p => p[1]));
+    s += `<polyline fill="none" stroke="${o.color(t)}" stroke-width="1" opacity=".22" points="${d.map(([y, p]) => X(y).toFixed(1) + ',' + Y(p[1]).toFixed(1)).join(' ')}"/>`;
+  }));
+  // 球種ごとの平均軌道
+  const M = {};
+  types.forEach(t => { const L2 = by[t]; if (!L2 || !L2.length) return;
+    const yRel = mean(L2.map(x => x.f.yRel));
+    const pts = [[yRel, [mean(L2.map(x => x.f.rel[0])), mean(L2.map(x => x.f.rel[1]))]]]
+      .concat(grid.filter(y => y < yRel).map(y => { const ps = L2.map(x => x.f.at(y)).filter(Boolean); return [y, [mean(ps.map(p => p[0])), mean(ps.map(p => p[1]))]]; }));
+    const atT = L2.map(x => x.f.at(o.tun)).filter(Boolean), atP = L2.map(x => x.f.plate);
+    M[t] = { n: L2.length, pts, tun: [mean(atT.map(p => p[0])), mean(atT.map(p => p[1]))], plate: [mean(atP.map(p => p[0])), mean(atP.map(p => p[1]))],
+             vaa: mean(nums(L2.map(x => x.r), '入射角縦')), vra: mean(nums(L2.map(x => x.r), 'リリース角縦')),
+             relH: mean(nums(L2.map(x => x.r), 'リリース高さ')), ext: mean(nums(L2.map(x => x.r), 'エクステンション')) };
+    s += `<polyline fill="none" stroke="${o.color(t)}" stroke-width="3" stroke-linecap="round" points="${pts.map(([y, p]) => X(y).toFixed(1) + ',' + Y(p[1]).toFixed(1)).join(' ')}"/>`;
+    // 平均のリリース点に印
+    s += `<circle cx="${X(pts[0][0]).toFixed(1)}" cy="${Y(pts[0][1][1]).toFixed(1)}" r="4" fill="${o.color(t)}" stroke="#fff" stroke-width="1.2"/>`;
+  });
+  const fb = M['Fastball'] || M[types[0]];
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) * 100;
+  // トンネル点での離れ（縦線）
+  if (fb) Object.keys(M).forEach(t => { if (M[t] === fb) return;
+    s += `<line x1="${X(o.tun) - 3}" y1="${Y(fb.tun[1])}" x2="${X(o.tun) - 3}" y2="${Y(M[t].tun[1])}" stroke="${o.color(t)}" stroke-width="2.5" opacity=".8"/>`; });
+  // 右側のラベル（重ならないように並べる）
+  const labs = Object.keys(M).map(t => ({ t, z: M[t].plate[1] })).sort((a, b) => a.z - b.z);
+  let prev = -1; const rowH = 24;
+  labs.forEach(l => { let yy = Y(l.z); if (prev >= 0 && prev - yy < rowH) yy = prev - rowH; prev = yy; l.y = yy; });
+  labs.forEach(({ t, z, y }) => { const m = M[t], c = o.color(t);
+    const sep = fb && m !== fb ? `トンネル ${dist(fb.tun, m.tun).toFixed(0)}cm → 本塁 ${dist(fb.plate, m.plate).toFixed(0)}cm` : `${m.n}球・基準`;
+    s += `<line x1="${X(0)}" y1="${Y(z)}" x2="${X(YR) + 4}" y2="${y + 6}" stroke="${c}" stroke-width=".8" opacity=".6"/>`
+       + `<text x="${X(YR) + 6}" y="${y + 3}" class="lab" style="fill:${c}">${esc(o.jtype(t))} 入射 ${isNum(m.vaa) ? m.vaa.toFixed(1) + '°' : '—'}</text>`
+       + `<text x="${X(YR) + 6}" y="${y + 14}" style="fill:${c};font-size:9.5px">${esc(sep)}</text>`; });
+  // 左下のラベル：球種ごとのリリース角・高さ・エクステンション（軌道が通らない空いたところに、色で対応づけて並べる）
+  const f1 = (v, u) => isNum(v) ? v.toFixed(1) + u : '—';
+  const f2 = (v, u) => isNum(v) ? v.toFixed(2) + u : '—';
+  const rl = Object.keys(M).map(t => ({ t, m: M[t] })).sort((a, b) => (isNum(b.m.vra) ? b.m.vra : -99) - (isNum(a.m.vra) ? a.m.vra : -99));
+  if (rl.length) {
+    const lx = X(17.7); let yy = h - B - 8 - 13 * (rl.length - 1);
+    s += `<text x="${lx}" y="${yy - 13}" class="lab" style="fill:var(--muted)">リリース（角度は上向きが＋）：角度 ／ 高さ ／ エクステンション</text>`;
+    rl.forEach(({ t, m }) => { const c = o.color(t);
+      s += `<circle cx="${lx + 4}" cy="${yy - 3.5}" r="3.5" fill="${c}"/>`
+         + `<text x="${lx + 12}" y="${yy}" class="lab" style="fill:${c}">${esc(o.jtype(t))} ${f1(m.vra, '°')} ／ ${f2(m.relH, ' m')} ／ ${f2(m.ext, ' m')}</text>`;
+      yy += 13; });
+  }
+  return s + '</svg>';
 }
 
 /* CSVの1行 → 保存する1行。flip=true で横方向をすべて反転 */
@@ -369,9 +460,12 @@ export function mount(ROOT, CORE) {
   const CFG = CORE.cfg;
   const CONN_KEY = 'hsp-conn-' + CFG.TEAM_ID + CFG.STORE;
   const DBKEY = 'hsp-v3-' + CFG.TEAM_ID + CFG.STORE;
-  const TMKEY = 'hsp-tm-' + CFG.TEAM_ID + CFG.STORE;
   const conn = (() => { try { return JSON.parse(localStorage.getItem(CONN_KEY) || 'null'); } catch (e) { return null; } })() || {};
   const role = String(conn.user && conn.user.role || '');
+  /* 選手がログインしているとき：自分の分だけをサーバーから受け取り、自分のページだけを出す。
+     この端末にスタッフの名簿やデータが残っていても使わない（控えも別の場所に置く） */
+  const SELF = role.indexOf('選手') === 0;
+  const TMKEY = (SELF ? 'hsp-tm-me-' : 'hsp-tm-') + CFG.TEAM_ID + CFG.STORE;
   const isAdmin = () => role.indexOf('管理') === 0;
   const appUrl = () => { let u = ''; if (CFG.APP_URL_B64) { try { u = atob(String(CFG.APP_URL_B64).trim()); } catch (e) {} }
     return conn.url || (/^https?:\/\/.+/.test(u) ? u : ''); };
@@ -380,7 +474,7 @@ export function mount(ROOT, CORE) {
     const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(Object.assign({ action, token: conn.token }, payload || {})) });
     const j = await res.json();
-    if (!j.ok && j.error === 'unauthorized') throw new Error('ログインが切れています。「記録」タブでログインし直してください');
+    if (!j.ok && j.error === 'unauthorized') throw new Error(SELF ? 'ログインが切れています。マイページからログインし直してください' : 'ログインが切れています。「記録」タブでログインし直してください');
     return j;
   }
 
@@ -398,6 +492,7 @@ export function mount(ROOT, CORE) {
   const jtype = t => { const v = SETTINGS['球種:' + (t || '')]; return v ? String(v) : (t || '未分類'); };
   const zone = () => ({ top: Number(SETTINGS['ゾーン上限']) || 0.98, bot: Number(SETTINGS['ゾーン下限']) || 0.47, side: Number(SETTINGS['ゾーン横']) || 0.25 });
   const inZone = r => isNum(r['コース高さ']) && isNum(r['コース横']) && r['コース高さ'] >= zone().bot && r['コース高さ'] <= zone().top && Math.abs(r['コース横']) <= zone().side;
+  const tunnelDist = () => Number(SETTINGS['トンネル距離']) || 7.25;
   const rhSign = () => (String(SETTINGS['右投げの符号'] || '+') === '-' ? -1 : 1);
   const sideLabels = () => String(SETTINGS['コース+側'] || '三塁側') === '一塁側' ? ['三塁側', '一塁側'] : ['一塁側', '三塁側'];
   const isEst = (r, k) => String(r['補完'] || '').split(',').indexOf(k) >= 0;
@@ -426,9 +521,17 @@ export function mount(ROOT, CORE) {
     if (PITCHERS.length && !PITCHERS.some(p => String(p['選手ID']) === F.player)) F.player = String(PITCHERS[0]['選手ID']);
   }
   function applyTm(p) { SESSIONS = p.sessions || []; ROWS = p.rows || []; SETTINGS = p.settings || {}; }
+  /* 選手本人だけの名簿を作る */
+  function applySelf(me) {
+    if (!me || !me.pid) return;
+    applyMaster({ teams: [{ 'チームID': 'me', 'チーム名': CFG.TEAM_NAME, '自チーム': 1 }],
+                  players: [{ '選手ID': me.pid, '氏名': me.name, 'チームID': 'me', '投手': 1, '投': me.hand || '右', '順': 0 }] });
+    F.player = String(me.pid);
+  }
   function warmStart() {
-    const lm = masterFromLocal(); if (lm) applyMaster(lm);
     let c = null; try { c = JSON.parse(localStorage.getItem(TMKEY) || 'null'); } catch (e) {}
+    if (SELF) { if (c && c.rows && c.me) { applySelf(c.me); applyTm(c); fetchedFrom = c.from || fetchedFrom; loaded = true; } return; }
+    const lm = masterFromLocal(); if (lm) applyMaster(lm);
     if (c && c.rows) { applyTm(c); fetchedFrom = c.from || fetchedFrom; if (MASTER) loaded = true; }
   }
   async function load(from) {
@@ -437,11 +540,18 @@ export function mount(ROOT, CORE) {
     const sig = () => JSON.stringify([ROWS.length, SESSIONS.length, PITCHERS.map(p => [p['選手ID'], p['氏名'], p['投']]), SETTINGS]);
     const before = loaded ? sig() : '';
     try {
-      const [m, p] = await Promise.all([masterFresh ? null : api('getMaster'), api('getTrackman', { from: fetchedFrom })]);
-      if (m) { if (!m.ok) throw new Error(m.error || 'マスタを取れませんでした'); applyMaster(m.master); masterFresh = true; }
-      if (!p.ok) throw new Error(p.error || 'Trackmanのデータを取れませんでした');
-      applyTm(p);
-      try { const s = JSON.stringify({ sessions: SESSIONS, rows: ROWS, settings: SETTINGS, from: fetchedFrom }); if (s.length < 2500000) localStorage.setItem(TMKEY, s); else localStorage.removeItem(TMKEY); } catch (e) {}
+      let me = null;
+      if (SELF) {
+        const p = await api('getMyTrackman', { from: fetchedFrom });
+        if (!p.ok) throw new Error(p.error || 'Trackmanのデータを取れませんでした');
+        me = p.me; applySelf(me); applyTm(p);
+      } else {
+        const [m, p] = await Promise.all([masterFresh ? null : api('getMaster'), api('getTrackman', { from: fetchedFrom })]);
+        if (m) { if (!m.ok) throw new Error(m.error || 'マスタを取れませんでした'); applyMaster(m.master); masterFresh = true; }
+        if (!p.ok) throw new Error(p.error || 'Trackmanのデータを取れませんでした');
+        applyTm(p);
+      }
+      try { const s = JSON.stringify({ sessions: SESSIONS, rows: ROWS, settings: SETTINGS, from: fetchedFrom, me }); if (s.length < 2500000) localStorage.setItem(TMKEY, s); else localStorage.removeItem(TMKEY); } catch (e) {}
       loaded = true; msg = ''; busy = false;
       if (before !== sig()) render();
       return;
@@ -603,11 +713,11 @@ export function mount(ROOT, CORE) {
   const ITEMS = {
     player: [['その他', [['p:kpi', '上の数字（球数・平均球速など）'], ['p:table', '球種別の表'], ['p:sess', '取り込みの一覧']]],
              ['表の列', METRICS.map(m => ['p:col:' + m[0], m[0]])],
-             ['グラフ', ['変化量', 'リリース点', '球速の分布', 'コース', '球速の推移', '縦変化量の推移', '回転数の推移', '回転効率'].map(n => ['p:chart:' + n, n])]],
+             ['グラフ', ['変化量', '軌道（横から・トンネル）', 'リリース点', 'リリース高さ×エクステンション', '球速の分布', 'コース', '球速の推移', '縦変化量の推移', '横変化量の推移', '回転数の推移', '回転効率'].map(n => ['p:chart:' + n, n])]],
     team:   [['表の列', METRICS.map(m => ['t:col:' + m[0], m[0]])],
              ['その他', [['t:scatter', '散布図'], ['t:alltypes', '球種ごとの球速と回転数']]]],
     compare:[['表の列', METRICS.map(m => ['c:col:' + m[0], m[0]])],
-             ['グラフ', ['変化量', 'リリース点', '球速', '回転数', 'コース'].map(n => ['c:chart:' + n, n])]]
+             ['グラフ', ['変化量', 'リリース点', 'リリース高さ×エクステンション', '球速', '回転数', 'コース'].map(n => ['c:chart:' + n, n])]]
   };
   function showPanel(view) {
     if (!F.showPanel) return '';
@@ -627,7 +737,7 @@ export function mount(ROOT, CORE) {
 
   function filterBar(extra) {
     return `<div class="bar noprint">
-      <label class="f">投手<select id="tm-player">${PITCHERS.map(p => `<option value="${esc(p['選手ID'])}" ${String(p['選手ID']) === F.player ? 'selected' : ''}>${esc(p['氏名'])}</option>`).join('')}</select></label>
+      ${SELF ? '' : `<label class="f">投手<select id="tm-player">${PITCHERS.map(p => `<option value="${esc(p['選手ID'])}" ${String(p['選手ID']) === F.player ? 'selected' : ''}>${esc(p['氏名'])}</option>`).join('')}</select></label>`}
       <label class="f">期間 から<input type="date" id="tm-from" value="${F.from}"></label>
       <label class="f">まで<input type="date" id="tm-to" value="${F.to}"></label>
       <label class="f">種別<select id="tm-kindf"><option value="">対戦もブルペンも</option><option value="対戦" ${F.kind === '対戦' ? 'selected' : ''}>対戦だけ</option><option value="ブルペン" ${F.kind === 'ブルペン' ? 'selected' : ''}>ブルペンだけ</option></select></label>
@@ -666,6 +776,7 @@ export function mount(ROOT, CORE) {
       return { x, y, c: typeColor(t), label: jtype(t), t: `${jtype(t)} 平均 縦${num(y, 0)} 横${num(x, 0)}（${nums(rs, '縦変化量').length}球）` }; });
     const ptsRel = vis.map(r => ({ x: r['リリース横幅'], y: r['リリース高さ'], c: col(r), hollow: isEst(r, 'リリース高さ'), t: `${vt(r)} 横${num(r['リリース横幅'], 2)} 高${num(r['リリース高さ'], 2)}` }));
     const ptsLoc = vis.map(r => ({ x: r['コース横'], y: r['コース高さ'], c: col(r), hollow: isEst(r, 'コース高さ'), t: vt(r) }));
+    const ptsExt = vis.map(r => ({ x: r['エクステンション'], y: r['リリース高さ'], c: col(r), hollow: isEst(r, 'エクステンション') || isEst(r, 'リリース高さ'), t: `${vt(r)} エクステ${num(r['エクステンション'], 2)} 高${num(r['リリース高さ'], 2)}` }));
     const shadeNote = ref ? `色の濃さ＝球速（ストレート平均 ${num(ref, 1)} km/h を100%として）。中抜きの点は軌道から補完した球` : '中抜きの点は軌道から補完した球';
     const veloG = types.filter(t => !F.hideTypes[t]).map(t => ({ name: jtype(t), c: typeColor(t), vals: nums(all.filter(r => String(r['球種']) === t), '球速') }));
     const byDate = k => types.filter(t => !F.hideTypes[t]).map(t => { const rs = all.filter(r => String(r['球種']) === t && isNum(r[k]) && (k !== '回転数' || !r['回転数疑い']));
@@ -674,10 +785,13 @@ export function mount(ROOT, CORE) {
     const CH = {
       '変化量': () => `<div class="card"><h3>変化量<span class="u">横 × 縦 cm。大きい点は球種ごとの平均</span></h3>${scatter({ xr: [-70, 70], yr: [-70, 70], xl: '横変化量 cm', yl: '縦変化量 cm', xticks: 7, yticks: 7, pts: ptsMv, means: meansMv, xlabels: sideLabels() })}<div class="note" style="margin:6px 0 0">${shadeNote}</div></div>`,
       'リリース点': () => `<div class="card"><h3>リリース点<span class="u">横 × 高さ m</span></h3>${scatter({ xr: [-1.2, 1.2], yr: [1.0, 2.2], xl: 'リリース横幅 m', yl: 'リリース高さ m', xticks: 6, yticks: 6, pts: ptsRel, xlabels: sideLabels() })}</div>`,
+      '軌道（横から・トンネル）': () => `<div class="card" style="grid-column:1 / -1"><h3>軌道（横から）とピッチトンネル<span class="u">細い線＝1球、太い線＝球種の平均。トンネル点の縦線はストレートとの離れ</span></h3>${sideView(vis, types.filter(t => !F.hideTypes[t]), { tun: tunnelDist(), zone: zone(), color: typeColor, jtype })}<div class="note" style="margin:6px 0 0">トンネル点＝打者が振るか決めるとされる地点（本塁まで ${tunnelDist()} m、到達の約0.2秒前）。ストレートとの離れが、トンネル点で小さく本塁で大きいほど見分けにくい球です。離れは球種の平均軌道どうしで測っています。</div></div>`,
+      'リリース高さ×エクステンション': () => `<div class="card"><h3>リリース高さ × エクステンション<span class="u">前に出るほど右、高いほど上 m</span></h3>${scatter({ xr: [1.2, 2.4], yr: [1.0, 2.2], xl: 'エクステンション m', yl: 'リリース高さ m', xticks: 6, yticks: 6, pts: ptsExt, zero: false })}</div>`,
       '球速の分布': () => `<div class="card"><h3>球速の分布<span class="u">最小〜最大、太線は平均±1σ</span></h3>${rangeChart(veloG, { unit: 'km/h', dec: 1 })}</div>`,
       'コース': () => `<div class="card"><h3>コース<span class="u">捕手から見て。枠がゾーン</span></h3>${zoneChart(ptsLoc, zone(), { xlabels: sideLabels() })}</div>`,
       '球速の推移': () => `<div class="card"><h3>球速の推移<span class="u">日ごとの平均</span></h3>${trendChart(byDate('球速'), { dec: 1, yl: 'km/h' })}</div>`,
       '縦変化量の推移': () => `<div class="card"><h3>縦変化量の推移<span class="u">日ごとの平均 cm</span></h3>${trendChart(byDate('縦変化量'), { dec: 0, yl: 'cm' })}</div>`,
+      '横変化量の推移': () => `<div class="card"><h3>横変化量の推移<span class="u">日ごとの平均 cm</span></h3>${trendChart(byDate('横変化量'), { dec: 0, yl: 'cm' })}</div>`,
       '回転数の推移': () => `<div class="card"><h3>回転数の推移<span class="u">日ごとの平均 rpm（疑いのある球は除く）</span></h3>${trendChart(byDate('回転数'), { dec: 0, yl: 'rpm' })}</div>`,
       '回転効率': () => `<div class="card"><h3>回転効率<span class="u">Trackmanの実測 %</span></h3>${all.some(r => isNum(r['回転効率'])) ? rangeChart(types.filter(t => !F.hideTypes[t]).map(t => ({ name: jtype(t), c: typeColor(t), vals: all.filter(r => String(r['球種']) === t).map(eff).filter(Boolean).map(e => e.v) })), { dec: 0 }) : '<div class="empty">この期間の球には回転効率の実測が入っていません</div>'}</div>`
     };
@@ -755,6 +869,8 @@ export function mount(ROOT, CORE) {
     const rel = scatter({ xr: [-1.2, 1.2], yr: [1.0, 2.2], xl: 'リリース横幅 m', yl: 'リリース高さ m', xticks: 6, yticks: 6, xlabels: sideLabels(),
       pts: sets.flatMap(s => s.rows.map(r => ({ x: r['リリース横幅'], y: r['リリース高さ'], c: scol(s, r), hollow: isEst(r, 'リリース高さ'), t: `${s.name} ${jtype(r['球種'])} ${num(r['球速'], 1)}km/h` }))) });
     const loc = zoneChart(sets.flatMap(s => s.rows.map(r => ({ x: r['コース横'], y: r['コース高さ'], c: scol(s, r), hollow: isEst(r, 'コース高さ'), t: `${s.name} ${jtype(r['球種'])} ${num(r['球速'], 1)}km/h` }))), zone(), { xlabels: sideLabels() });
+    const ext = scatter({ xr: [1.2, 2.4], yr: [1.0, 2.2], xl: 'エクステンション m', yl: 'リリース高さ m', xticks: 6, yticks: 6, zero: false,
+      pts: sets.flatMap(s => s.rows.map(r => ({ x: r['エクステンション'], y: r['リリース高さ'], c: scol(s, r), hollow: isEst(r, 'エクステンション') || isEst(r, 'リリース高さ'), t: `${s.name} ${jtype(r['球種'])} ${num(r['球速'], 1)}km/h` }))) });
     const velo = rangeChart(sets.map(s => ({ name: s.name, c: s.c, vals: nums(s.rows, '球速') })), { dec: 1 });
     const spin = rangeChart(sets.map(s => ({ name: s.name, c: s.c, vals: nums(spinOK(s.rows), '回転数') })), { dec: 0 });
     const table = `<div class="card"><h3>数字で比べる<span class="u">選んだ球種をまとめた平均</span></h3><div class="tw"><table>
@@ -762,20 +878,21 @@ export function mount(ROOT, CORE) {
       ${sets.map(s => { const x = stats(s.rows); return `<tr><td><span class="sw" style="background:${s.c}"></span>${esc(s.name)} <span class="muted">${esc(s.hand)}</span></td><td class="n">${x.n}</td>${colsOf('c:col:').map(m => cell(x, m)).join('')}</tr>`; }).join('')}
       </table></div></div>`;
     return bar + `<div class="note" id="print-head"><b style="font-size:14px">比較</b>　${sets.map(s => esc(s.name)).join('・')}　${F.from || ''}〜${F.to || '現在'}　<span class="muted">作成 ${today()}　取扱注意</span></div>` + legend + table
-      + `<div class="grid2">${on('c:chart:変化量') ? `<div class="card"><h3>変化量<span class="u">大きい点は投手×球種の平均</span></h3>${mv}<div class="note" style="margin:6px 0 0">色の濃さ＝球速（各投手のストレート平均を100%として）。中抜きは軌道から補完した球</div></div>` : ''}${on('c:chart:リリース点') ? `<div class="card"><h3>リリース点</h3>${rel}</div>` : ''}${on('c:chart:球速') ? `<div class="card"><h3>球速</h3>${velo}</div>` : ''}${on('c:chart:回転数') ? `<div class="card"><h3>回転数<span class="u">疑いのある球は除く</span></h3>${spin}</div>` : ''}${on('c:chart:コース') ? `<div class="card"><h3>コース</h3>${loc}</div>` : ''}</div>`;
+      + `<div class="grid2">${on('c:chart:変化量') ? `<div class="card"><h3>変化量<span class="u">大きい点は投手×球種の平均</span></h3>${mv}<div class="note" style="margin:6px 0 0">色の濃さ＝球速（各投手のストレート平均を100%として）。中抜きは軌道から補完した球</div></div>` : ''}${on('c:chart:リリース点') ? `<div class="card"><h3>リリース点</h3>${rel}</div>` : ''}${on('c:chart:リリース高さ×エクステンション') ? `<div class="card"><h3>リリース高さ × エクステンション</h3>${ext}</div>` : ''}${on('c:chart:球速') ? `<div class="card"><h3>球速</h3>${velo}</div>` : ''}${on('c:chart:回転数') ? `<div class="card"><h3>回転数<span class="u">疑いのある球は除く</span></h3>${spin}</div>` : ''}${on('c:chart:コース') ? `<div class="card"><h3>コース</h3>${loc}</div>` : ''}</div>`;
   }
 
   /* ================= 描画 ================= */
   function render() {
     const sy = window.scrollY;
-    const tabs = [['player', '個人'], ['team', 'チーム'], ['compare', '比較'], ['in', '取り込み']];
+    if (SELF) view = 'player';
+    const tabs = SELF ? [] : [['player', '個人'], ['team', 'チーム'], ['compare', '比較'], ['in', '取り込み']];
     const body = !loaded
       ? (busy ? '<div class="empty">読み込んでいます…</div>'
               : `<div class="empty">${esc(msg || 'まだ読み込んでいません')}<br><br><button class="b" id="tm-reload">読み込む</button></div>`)
       : (view === 'in' ? viewImport() : view === 'team' ? viewTeam() : view === 'compare' ? viewCompare() : viewPlayer());
     ROOT.innerHTML = `<div class="pw">
-      <div class="hd"><h2>Trackman</h2><span class="sub">投手 ${PITCHERS.length}人・${ROWS.length}球</span>
-        <div class="sp"><div class="seg">${tabs.map(([k, n]) => `<button data-v="${k}" aria-pressed="${view === k}">${n}</button>`).join('')}</div>
+      <div class="hd"><h2>Trackman</h2><span class="sub">${SELF ? `${ROWS.length}球` : `投手 ${PITCHERS.length}人・${ROWS.length}球`}</span>
+        <div class="sp">${tabs.length ? `<div class="seg">${tabs.map(([k, n]) => `<button data-v="${k}" aria-pressed="${view === k}">${n}</button>`).join('')}</div>` : ''}
           <button class="b" id="tm-refresh" ${busy ? 'disabled' : ''}>${busy ? '更新中…' : '更新'}</button></div></div>
       ${msg && loaded ? `<div class="note" style="color:var(--clay)">${esc(msg)}</div>` : ''}
       ${body}</div>`;
@@ -784,7 +901,7 @@ export function mount(ROOT, CORE) {
 
   /* ================= 操作 ================= */
   ROOT.addEventListener('click', async e => {
-    const v = e.target.closest('[data-v]'); if (v) { view = v.dataset.v; render(); return; }
+    const v = e.target.closest('[data-v]'); if (v) { if (!SELF) view = v.dataset.v; render(); return; }
     const g = e.target.closest('[data-goto]'); if (g) { e.preventDefault(); F.player = g.dataset.goto; view = 'player'; render(); return; }
     const tt = e.target.closest('[data-tt]'); if (tt) { F.hideTypes[tt.dataset.tt] = !F.hideTypes[tt.dataset.tt]; render(); return; }
     const cp = e.target.closest('[data-cmp]'); if (cp) { F.cmp[cp.dataset.cmp] = !F.cmp[cp.dataset.cmp]; render(); return; }
@@ -828,11 +945,12 @@ export function mount(ROOT, CORE) {
   /* タブを開くたびに、記録タブが端末に持っている名簿（追加した選手・投げ手の変更）を取り直す */
   ROOT.addEventListener('hsp:show', () => {
     if (!loaded && !busy) { load(); return; }
+    if (SELF) return;
     const lm = masterFromLocal(); if (lm) { const b = JSON.stringify(PITCHERS.map(p => [p['選手ID'], p['氏名'], p['投']])); applyMaster(lm);
       if (b !== JSON.stringify(PITCHERS.map(p => [p['選手ID'], p['氏名'], p['投']]))) render(); }
   });
   warmStart();
-  if (!ROWS.length) view = 'in';
+  if (!ROWS.length && !SELF) view = 'in';
   render();
   load();
 }

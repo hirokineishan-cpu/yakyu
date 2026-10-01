@@ -165,6 +165,8 @@ export function mount(ROOT, CORE) {
   const CONN_KEY = 'hsp-conn-' + CFG.TEAM_ID + CFG.STORE;
   const conn = (() => { try { return JSON.parse(localStorage.getItem(CONN_KEY) || 'null'); }
                         catch (e) { return null; } })() || {};
+  /* 選手がログインしているとき：自分の記録だけを受け取り、「選手別」の自分のページだけを出す */
+  const SELF = String(conn.user && conn.user.role || '').indexOf('選手') === 0;
   const appUrl = () => {
     let u = '';
     if (CFG.APP_URL_B64) { try { u = atob(String(CFG.APP_URL_B64).trim()); } catch (e) {} }
@@ -178,12 +180,12 @@ export function mount(ROOT, CORE) {
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(Object.assign({ action, token: conn.token }, payload || {})) });
     const j = await res.json();
-    if (!j.ok && j.error === 'unauthorized') throw new Error('ログインが切れています。「記録」タブでログインし直してください');
+    if (!j.ok && j.error === 'unauthorized') throw new Error(SELF ? 'ログインが切れています。マイページからログインし直してください' : 'ログインが切れています。「記録」タブでログインし直してください');
     return j;
   }
 
   /* ---- 状態 ---- */
-  let view = 'in';          // in | item | player
+  let view = SELF ? 'player' : 'in';          // in | item | player
   let ITEMS = [], ROWS = [], PITCHERS = [], MASTER = null;
   let selItem = '', selPlayer = '', selDate = today();
   let draft = {};           // 入力中の値  key: pid|itemId|side
@@ -192,7 +194,7 @@ export function mount(ROOT, CORE) {
 
   /* ---- 端末に残っているもの（先に見せるためだけ） ---- */
   const DBKEY = 'hsp-v3-' + CFG.TEAM_ID + CFG.STORE;   // 「記録」が持っている名簿
-  const PHKEY = 'hsp-ph-' + CFG.TEAM_ID + CFG.STORE;   // 前回の計測データ
+  const PHKEY = (SELF ? 'hsp-ph-me-' : 'hsp-ph-') + CFG.TEAM_ID + CFG.STORE;   // 前回の計測データ（選手本人の分は別の場所）
 
   function masterFromLocal() {
     let db = null;
@@ -236,10 +238,17 @@ export function mount(ROOT, CORE) {
   }
 
   /* ---- 取得 ---- */
+  function applySelf(me) {
+    if (!me || !me.pid) return;
+    applyMaster({ teams: [{ 'チームID': 'me', 'チーム名': CFG.TEAM_NAME, '自チーム': 1 }],
+                  players: [{ '選手ID': me.pid, '氏名': me.name, 'チームID': 'me', '投手': 1, '投': me.hand || '右', '順': 0 }] });
+    selPlayer = String(me.pid);
+  }
   function warmStart() {          // 通信を待たずに、まず前回の内容を出す
     if (loaded) return;
-    const lm = masterFromLocal(); if (lm) applyMaster(lm);
     let c = null; try { c = JSON.parse(localStorage.getItem(PHKEY) || 'null'); } catch (e) {}
+    if (SELF) { if (c && c.items && c.me) { applySelf(c.me); applyPhys(c); loaded = true; } return; }
+    const lm = masterFromLocal(); if (lm) applyMaster(lm);
     if (c && c.items && c.items.length) applyPhys(c);
     if (MASTER && ITEMS.length) loaded = true;
   }
@@ -248,17 +257,24 @@ export function mount(ROOT, CORE) {
     busy = true; if (!loaded) render();
     const before = loaded ? JSON.stringify({ i: ITEMS, r: ROWS, p: PITCHERS }) : '';
     try {
-      const [m, p] = await Promise.all([
-        masterFresh ? null : api('getMaster'),
-        api('getPhysical', {})
-      ]);
-      if (m) {
-        if (!m.ok) throw new Error(m.error || 'マスタを取れませんでした');
-        applyMaster(m.master); masterFresh = true;
+      let me = null;
+      if (SELF) {
+        const p = await api('getMyPhysical', {});
+        if (!p.ok) throw new Error(p.error || 'フィジカルのデータを取れませんでした');
+        me = p.me; applySelf(me); applyPhys(p);
+      } else {
+        const [m, p] = await Promise.all([
+          masterFresh ? null : api('getMaster'),
+          api('getPhysical', {})
+        ]);
+        if (m) {
+          if (!m.ok) throw new Error(m.error || 'マスタを取れませんでした');
+          applyMaster(m.master); masterFresh = true;
+        }
+        if (!p.ok) throw new Error(p.error || 'フィジカルのデータを取れませんでした');
+        applyPhys(p);
       }
-      if (!p.ok) throw new Error(p.error || 'フィジカルのデータを取れませんでした');
-      applyPhys(p);
-      try { localStorage.setItem(PHKEY, JSON.stringify({ items: ITEMS, rows: ROWS })); } catch (e) {}
+      try { localStorage.setItem(PHKEY, JSON.stringify({ items: ITEMS, rows: ROWS, me })); } catch (e) {}
       const same = before && before === JSON.stringify({ i: ITEMS, r: ROWS, p: PITCHERS });
       loaded = true; msg = '';
       busy = false;
@@ -488,10 +504,10 @@ export function mount(ROOT, CORE) {
         <table>${rows}</table>${diff}${note ? `<div class="src">${esc(note)}</div>` : ''}</div>`;
     }
 
-    const tgTxt = tg ? `目標球速 <b>${tg}</b> km/h` : '<span class="muted">目標球速が未入力です（入力タブの「目標球速」で登録すると、球速連動の基準が出ます）</span>';
+    const tgTxt = tg ? `目標球速 <b>${tg}</b> km/h` : (SELF ? '<span class="muted">目標球速はまだ入っていません</span>' : '<span class="muted">目標球速が未入力です（入力タブの「目標球速」で登録すると、球速連動の基準が出ます）</span>');
     return `
     <div class="bar">
-      <label class="f">投手${playerSelect('ph-player', selPlayer)}</label>
+      ${SELF ? '' : `<label class="f">投手${playerSelect('ph-player', selPlayer)}</label>`}
       <div style="margin-left:auto"><button class="b" id="ph-print">PDFで保存</button></div>
     </div>
     <div class="note" id="print-head"><b style="font-size:14px">${esc(pname(selPlayer))}</b>　${tgTxt}
@@ -502,7 +518,8 @@ export function mount(ROOT, CORE) {
   /* ================= 描画 ================= */
   function render() {
     const sy = window.scrollY;
-    const tabs = [['in', '入力'], ['item', '種目別'], ['player', '選手別']];
+    if (SELF) view = 'player';
+    const tabs = SELF ? [] : [['in', '入力'], ['item', '種目別'], ['player', '選手別']];
     const body = !loaded
       ? (busy ? '<div class="empty">読み込んでいます…</div>'
               : `<div class="empty">${esc(msg || 'まだ読み込んでいません')}<br><br><button class="b" id="ph-reload">読み込む</button></div>`)
@@ -510,10 +527,10 @@ export function mount(ROOT, CORE) {
     ROOT.innerHTML = `<div class="pw">
       <div class="hd">
         <h2>フィジカル計測</h2>
-        <span class="sub">投手 ${PITCHERS.length}人・記録 ${ROWS.length}件</span>
+        <span class="sub">${SELF ? `記録 ${ROWS.length}件` : `投手 ${PITCHERS.length}人・記録 ${ROWS.length}件`}</span>
         <div class="sp">
-          <div class="seg">${tabs.map(([k, n]) =>
-            `<button data-v="${k}" aria-pressed="${view === k}">${n}</button>`).join('')}</div>
+          ${tabs.length ? `<div class="seg">${tabs.map(([k, n]) =>
+            `<button data-v="${k}" aria-pressed="${view === k}">${n}</button>`).join('')}</div>` : ''}
           <button class="b" id="ph-refresh">更新</button>
         </div>
       </div>
@@ -525,7 +542,7 @@ export function mount(ROOT, CORE) {
   /* ================= 操作 ================= */
   ROOT.addEventListener('click', async e => {
     const v = e.target.closest('[data-v]');
-    if (v) { view = v.dataset.v; render(); return; }
+    if (v) { if (!SELF) view = v.dataset.v; render(); return; }
     const g = e.target.closest('[data-goto]');
     if (g) { e.preventDefault(); selPlayer = g.dataset.goto; view = 'player'; render(); return; }
     if (e.target.id === 'ph-reload' || e.target.id === 'ph-refresh') { masterFresh = false; load(); return; }
@@ -536,7 +553,7 @@ export function mount(ROOT, CORE) {
         setTimeout(() => document.documentElement.classList.remove('prt'), 400); }, 60);
       return;
     }
-    if (e.target.id === 'ph-save') { await save(); return; }
+    if (e.target.id === 'ph-save') { if (!SELF) await save(); return; }
   });
 
   ROOT.addEventListener('change', e => {
@@ -589,6 +606,7 @@ export function mount(ROOT, CORE) {
   /* タブを開くたびに、記録タブが端末に持っている名簿（追加した選手・投げ手の変更）を取り直す */
   ROOT.addEventListener('hsp:show', () => {
     if (!loaded && !busy) { load(); return; }
+    if (SELF) return;
     const lm = masterFromLocal(); if (lm) { const b = JSON.stringify(PITCHERS); applyMaster(lm); if (b !== JSON.stringify(PITCHERS)) render(); }
   });
   warmStart();
