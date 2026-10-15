@@ -3,7 +3,8 @@
 // 方針：アプリ本体は「保存してあるものをすぐ出す。裏で新しいものを取りに行って
 // 次回に備える」。毎回ネットを待たないので、開いた瞬間に出る。
 // そのぶん、更新は「次に開いたとき」に反映される（開き直せば入る）。
-const CACHE = "hsp-s2-aomoriyamada-v31";
+const CACHE = "hsp-s2-aomoriyamada-v32";
+const PREFIX = CACHE.replace(/v\d+$/, "");   // 例）hsp-s2-aomoriyamada-
 const SHELL = ["./", "./index.html", "./mod-record.js", "./mod-analysis.js", "./mod-physical.js", "./mod-trackman.js", "./mod-session.js", "./mod-me.js",
                "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
@@ -17,7 +18,8 @@ self.addEventListener("install", e => {
 
 self.addEventListener("activate", e => {
   e.waitUntil(caches.keys()
-    .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+    // 消すのは自分のアプリの古い版だけ（同じサイトにある別チームのアプリの保存分には触らない）
+    .then(keys => Promise.all(keys.filter(k => k !== CACHE && k.indexOf(PREFIX) === 0).map(k => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 
