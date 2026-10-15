@@ -153,7 +153,7 @@ const lineup=s=>G.lineup[s]||[];
 function batterPid(){ const l=lineup(atkSide()); return l.length?l[G.order[atkSide()]%l.length]:null; }
 function pitcherPid(){ return G.pitcher[defSide()]; }
 
-function activePlayers(t){ return (t?t.players:[]).filter(p=>!(p.state==="統合"||p.state==="退部"||p.state==="卒業")); }
+function activePlayers(t){ return (t?t.players:[]).filter(p=>!(p.state==="統合"||p.state==="退部"||p.state==="卒業"||p.state==="引退")); }
 function newGame(o){
   const A=teamOf(o.A), B=teamOf(o.B);
   const lu=t=>t?activePlayers(t).map(p=>p.pid):[];
@@ -385,7 +385,7 @@ function renderTeams(){
     </div>
     <table class="ros"><tr><th>順</th><th>背番号</th><th>氏名</th><th>入学年度</th><th>学年</th><th>打</th><th>投</th><th>投手</th><th></th></tr>
     ${t.players.map((p,i)=>{
-      if(p.state==="統合"||p.state==="退部"||p.state==="卒業") return "";
+      if(p.state==="統合"||p.state==="退部"||p.state==="卒業"||p.state==="引退") return "";
       const d=new Date(today()); const base=(d.getMonth()+1>=4)?d.getFullYear():d.getFullYear()-1;
       const gr=p.enroll?base-Number(p.enroll)+1:"";
       return `<tr>

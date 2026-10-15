@@ -134,7 +134,7 @@ export function mount(ROOT, CORE) {
           const ts = (m.master.teams || []).filter(t => String(t['自チーム']) === '1');
           const mine = ts.length <= 1 ? ts[0] : (ts.find(t => String(t['チーム名']) === CFG.TEAM_NAME) || ts[0]);
           const tid = mine ? String(mine['チームID']) : '';
-          PITCHERS = (m.master.players || []).filter(x => String(x['チームID']) === tid && String(x['投手']) === '1' && String(x['状態'] || '') !== '退部' && !String(x['備考'] || '').startsWith('統合先:'))
+          PITCHERS = (m.master.players || []).filter(x => String(x['チームID']) === tid && String(x['投手']) === '1' && ['退部', '引退', '卒業'].indexOf(String(x['状態'] || '')) < 0 && !String(x['備考'] || '').startsWith('統合先:'))
             .map(x => ({ id: String(x['選手ID']), name: String(x['氏名']), ord: Number(x['順'] || 0) })).sort((a, b) => a.ord - b.ord);
           if (!ED.pid && PITCHERS[0]) ED.pid = PITCHERS[0].id;
         }

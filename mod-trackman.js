@@ -81,7 +81,24 @@ const CSS = `
 #tab-trackman .chips{ display:flex; gap:6px; flex-wrap:wrap }
 #tab-trackman .chip{ font-size:12px; padding:4px 10px; border:1px solid var(--line); border-radius:99px; background:var(--paper); cursor:pointer; color:var(--ink2) }
 #tab-trackman .chip[aria-pressed="true"]{ background:var(--accent); color:var(--accentInk); border-color:var(--accent) }
+#tab-trackman .ktiles{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px }
+#tab-trackman .ktile{ border:1px solid var(--line); border-radius:10px; padding:8px 10px; background:var(--raise); min-width:0 }
+#tab-trackman .ktile.zone{ background:color-mix(in srgb, var(--hit,#1e8a4c) 10%, var(--paper)); border-color:color-mix(in srgb, var(--hit,#1e8a4c) 45%, transparent) }
+#tab-trackman .ktile.mid{ background:color-mix(in srgb, #c98a00 8%, var(--paper)) }
+#tab-trackman .ktile .kk{ font-size:10.5px; color:var(--muted); font-weight:700; letter-spacing:.05em }
+#tab-trackman .ktile .ktv{ font-family:var(--num); font-size:22px; font-weight:700; line-height:1.2 }
+#tab-trackman .ktile .ktv small{ font-family:var(--jp); font-size:10.5px; font-weight:400; color:var(--muted); margin-left:2px }
+#tab-trackman .ktile .kd{ font-size:11.5px; font-weight:700 } #tab-trackman .ktile .kd span{ font-weight:400; color:var(--muted) }
+#tab-trackman .ktile .kt{ font-size:10px; color:var(--muted); margin-top:1px }
+#tab-trackman .kbadge{ display:inline-block; margin-left:6px; font-family:var(--jp); font-size:9.5px; font-weight:700; color:#fff; background:var(--hit,#1e8a4c); border-radius:99px; padding:2px 7px; vertical-align:4px }
+#tab-trackman .kgrid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(440px,1fr)); gap:12px }
+#tab-trackman .kgrid td.n, #tab-trackman .kgrid th.n{ font-size:13px }
+#tab-trackman .kgrid th, #tab-trackman .kgrid td{ padding:5px 6px }
+@media (max-width:980px){ #tab-trackman .kgrid{ grid-template-columns:1fr } }
+html.prt #tab-trackman .ktiles{ grid-template-columns:repeat(4,1fr) }
+html.prt #tab-trackman .kgrid{ grid-template-columns:1fr 1fr }
 @media (max-width:620px){
+  #tab-trackman .ktiles{ grid-template-columns:repeat(2,minmax(0,1fr)) }
   #tab-trackman .pw{ padding:10px 10px 50px }
   #tab-trackman .seg button{ padding:6px 9px; font-size:12px }
 }
@@ -113,7 +130,10 @@ const sd = a => { if (a.length < 2) return null; const m = mean(a); return Math.
 const median = a => { if (!a.length) return null; const s = a.slice().sort((x, y) => x - y); const h = s.length >> 1; return s.length % 2 ? s[h] : (s[h - 1] + s[h]) / 2; };
 const nums = (rows, k) => rows.map(r => r[k]).filter(isNum).map(Number);
 /* 年度は4月始まり */
-const fiscalStart = () => { const d = new Date(); const y = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1; return y + '-04-01'; };
+const fiscalYear = () => { const d = new Date(); return d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1; };
+const fiscalStart = () => fiscalYear() + '-04-01';
+/* 学年：入学年度から（4月始まり）。入学年度が無ければ '' */
+const gradeOf = p => (isNum(p['入学年度']) && Number(p['入学年度'])) ? fiscalYear() - Number(p['入学年度']) + 1 : '';
 
 /* 球種の色。設定シートに日本語名があればそれを使う */
 const TYPE_COLOR = { Fastball: 'var(--t8)', TwoSeamFastBall: 'var(--t2)', Sinker: 'var(--t2)', Cutter: 'var(--t7)',
@@ -608,7 +628,7 @@ export function mount(ROOT, CORE) {
   let view = 'player';   // データが無いときは取り込み画面から
   let MASTER = null, PITCHERS = [], SESSIONS = [], ROWS = [], SETTINGS = {};
   let loaded = false, busy = false, msg = '', masterFresh = false, fetchedFrom = fiscalStart();
-  const F = { from: fiscalStart(), to: '', kind: '', warm: false, type: '', hand: '', player: '', hideTypes: {},
+  const F = { from: fiscalStart(), to: '', kind: '', warm: false, type: '', hand: '', player: '', hideTypes: {}, kType: '', kRange: '6', showRetired: false, retPanel: false,
               teamType: 'Fastball', tx: '横変化量', ty: '縦変化量', cmp: {}, cmpMin: '', cmpMax: '', sortKey: '球速', sortDir: -1, showPanel: false };
   const QUEUE = [];    // 取り込み待ちのファイル
   let IMPMSG = '';
@@ -635,15 +655,27 @@ export function mount(ROOT, CORE) {
         '状態': p.state || '', '備考': p.mergedTo ? '統合先:' + p.mergedTo : '', '順': (p.ord != null ? p.ord : i) })); });
     return teams.length ? { teams, players } : null;
   }
+  /* 引退・卒業の投手は、選手の一覧とチーム平均から外す（「引退も表示」で一覧には出せる）。
+     名簿の書き換え直後は記録タブの名簿がまだ古いことがあるので、この端末で変えた分を上書きで覚えておく */
+  const RET_ST = { '引退': 1, '卒業': 1 };
+  const RETKEY = 'hsp-tmret-' + CFG.TEAM_ID + CFG.STORE;
+  let RETOV = (() => { try { return JSON.parse(localStorage.getItem(RETKEY) || '{}'); } catch (e) { return {}; } })();
+  const saveRetOv = () => { try { localStorage.setItem(RETKEY, JSON.stringify(RETOV)); } catch (e) {} };
+  const stateOf = p => { const id = String(p['選手ID']); return (id in RETOV) ? RETOV[id] : String(p['状態'] || ''); };
+  let ALLP = [], ACTIVE = {};
   function applyMaster(m) {
     MASTER = m;
     // 自チームが2つ以上あるとき（端末のお試しデータが残っている等）は、設定のチーム名と同じものを優先する
     const cands = (m.teams || []).filter(t => String(t['自チーム']) === '1');
     const mineTeam = cands.length <= 1 ? cands[0] : (cands.find(t => String(t['チーム名']) === CFG.TEAM_NAME) || cands.find(t => String(t['チームID']) === 't-' + CFG.TEAM_ID) || cands[0]);
     const tid = mineTeam ? String(mineTeam['チームID']) : '';
-    PITCHERS = (m.players || []).filter(x => String(x['チームID']) === tid && String(x['投手']) === '1'
+    ALLP = (m.players || []).filter(x => String(x['チームID']) === tid && String(x['投手']) === '1'
       && String(x['状態'] || '') !== '退部' && !String(x['備考'] || '').startsWith('統合先:'))
       .sort((a, b) => Number(a['順'] || 0) - Number(b['順'] || 0));
+    // 記録タブの名簿（端末）が追いついたら、上書きは消す（サーバーの名簿を入れたときは消さない：記録タブがまだ古いことがあるため）
+    if (!m.dead) { let ch = false; (m.players || []).forEach(x => { const id = String(x['選手ID']); if ((id in RETOV) && String(x['状態'] || '') === RETOV[id]) { delete RETOV[id]; ch = true; } }); if (ch) saveRetOv(); }
+    ACTIVE = {}; ALLP.forEach(x => { if (!RET_ST[stateOf(x)]) ACTIVE[String(x['選手ID'])] = 1; });
+    PITCHERS = F.showRetired ? ALLP : ALLP.filter(x => ACTIVE[String(x['選手ID'])]);
     if (PITCHERS.length && !PITCHERS.some(p => String(p['選手ID']) === F.player)) F.player = String(PITCHERS[0]['選手ID']);
   }
   /* 以前の版で、空欄を軌道から計算して埋めた値（「補完」の列に名前が入っている）は使わない。データなしにする */
@@ -842,6 +874,7 @@ export function mount(ROOT, CORE) {
   const ITEMS = {
     player: [['その他', [['p:kpi', '上の数字（球数・平均球速など）'], ['p:table', '球種別の表'], ['p:sess', '取り込みの一覧']]],
              ['表の列', METRICS.map(m => ['p:col:' + m[0], m[0]])],
+             ['球種カルテ', [['p:karte', '球種カルテ（1つの球種の移り変わり）']]],
              ['グラフ', ['変化量', '軌道（横から・トンネル）', 'リリースをそろえたシミュレーション', 'リリース点', 'リリース高さ×エクステンション', '球速の分布', 'コース', '球速の推移', '縦変化量の推移', '横変化量の推移', '回転数の推移', '回転効率'].map(n => ['p:chart:' + n, n])],
              ['シミュレーションの中身', [['p:sim:same', '① 同じ角度で投げた図'], ['p:sim:zone', '① 捕手から見た到達点'], ['p:sim:aim', '② 真ん中に通す図'], ['p:sim:table', '表']]]],
     team:   [['表の列', METRICS.map(m => ['t:col:' + m[0], m[0]])],
@@ -867,13 +900,14 @@ export function mount(ROOT, CORE) {
 
   function filterBar(extra) {
     return `<div class="bar noprint">
-      ${SELF ? '' : `<label class="f">投手<select id="tm-player">${PITCHERS.map(p => `<option value="${esc(p['選手ID'])}" ${String(p['選手ID']) === F.player ? 'selected' : ''}>${esc(p['氏名'])}</option>`).join('')}</select></label>`}
+      ${SELF ? '' : `<label class="f">投手<select id="tm-player">${PITCHERS.map(p => `<option value="${esc(p['選手ID'])}" ${String(p['選手ID']) === F.player ? 'selected' : ''}>${esc(p['氏名'])}${ACTIVE[String(p['選手ID'])] ? '' : '（' + esc(stateOf(p)) + '）'}</option>`).join('')}</select></label>
+        <label class="c" style="padding-bottom:7px"><input type="checkbox" id="tm-showret" ${F.showRetired ? 'checked' : ''}> 引退も表示</label>`}
       <label class="f">期間 から<input type="date" id="tm-from" value="${F.from}"></label>
       <label class="f">まで<input type="date" id="tm-to" value="${F.to}"></label>
       <label class="f">種別<select id="tm-kindf"><option value="">対戦もブルペンも</option><option value="対戦" ${F.kind === '対戦' ? 'selected' : ''}>対戦だけ</option><option value="ブルペン" ${F.kind === 'ブルペン' ? 'selected' : ''}>ブルペンだけ</option></select></label>
       <label class="c" style="padding-bottom:7px"><input type="checkbox" id="tm-warm" ${F.warm ? 'checked' : ''}> Warmupも含める</label>
       ${extra || ''}
-      <div style="margin-left:auto; display:flex; gap:6px">${showBtn()}<button class="b" id="tm-print">PDFで保存</button></div>
+      <div style="margin-left:auto; display:flex; gap:6px">${SELF ? '' : `<button class="b" id="tm-retbtn" aria-pressed="${!!F.retPanel}">現役・引退</button>`}${showBtn()}<button class="b" id="tm-print">PDFで保存</button></div>
     </div>`;
   }
   function typeChips(types, rows) {
@@ -906,6 +940,265 @@ export function mount(ROOT, CORE) {
       ${row1}${pAim}
       ${on('p:sim:table') ? tb : ''}
       <div class="note" style="margin:6px 0 0">角度は上向きが＋。投げ出しの角度が1°違うと、本塁では約30cmずれます。②の「ストレートとの差」が小さいほど、リリース直後は打者から見分けにくい球です。「実際のリリース角」はTrackmanの計測（それぞれの球種のリリース点・コースのまま）なので、②の値とは一致しません。「少」は使えた球が3球未満で、数字がぶれやすい球種です。<br>球速と変化は狙う角度を変えても同じ、という前提の近似です。実際に同じリリースで投げ分けられるかは別なので、数字は参考にしてください。</div></div>`;
+  }
+  /* ================= 球種カルテ（1つの球種の移り変わり） =================
+     セッション＝「測定日 × 種別（対戦／ブルペン）」。上の絞り込み（期間・種別・Warmup）がそのまま効く。
+     チーム平均：スタッフは端末にある全投手のデータから、選手本人はサーバーから平均と順位だけを受け取る。
+     どちらも「同じ投げ手（右/左）」「現役（名簿の状態が 引退・卒業・退部 でない）」の投手だけ。 */
+  const FB_KEYS = ['Fastball', 'TwoSeamFastBall', 'Sinker'];
+  const fbKeyOf = rows => FB_KEYS.find(k => rows.some(r => String(r['球種']) === k)) || '';
+  /* 空振りゾーン：MLB 2024・2025年 Statcast の集計で、直球との球速差が10%以上で空振り率が高かった球種だけ色分けする */
+  const ZONE_T = { Slider: 1, Splitter: 1, ChangeUp: 1 };
+  const ZONE_LO = 10, ZONE_MID = 8;
+  const K_MIN = 5;   // チーム平均に入れる最少球数（1人・1球種あたり）
+  let TEAMREF = { key: '', data: null, busy: false, err: '' };
+
+  /* 1人分の球種ごとの平均（チーム平均・順位のもと） */
+  function playerTypeStats(rows) {
+    const fk = fbKeyOf(rows), out = {};
+    const fs = fk ? stats(rows.filter(r => String(r['球種']) === fk)) : null;
+    typesIn(rows).forEach(t => {
+      const rs = rows.filter(r => String(r['球種']) === t); if (rs.length < K_MIN) return;
+      const s = stats(rs);
+      out[t] = { velo: s.velo, spin: s.spin, ivb: s.ivb, hb: s.hb, relH: s.relH, relS: s.relS, ext: s.ext,
+        gap: (t !== fk && fs && fs.n >= K_MIN && isNum(fs.velo) && isNum(s.velo)) ? (fs.velo - s.velo) / fs.velo * 100 : null };
+    });
+    return out;
+  }
+  /* スタッフ：端末のデータから、同じ投げ手の現役投手の一覧（値つき） */
+  function teamRefLocal(hand) {
+    const rows = filt(ROWS, {}).filter(r => ACTIVE[String(r['投手ID'])] && phand(r['投手ID']) === hand);
+    const byP = {}; rows.forEach(r => { (byP[r['投手ID']] = byP[r['投手ID']] || []).push(r); });
+    const types = {};
+    Object.keys(byP).forEach(pid => { const ps = playerTypeStats(byP[pid]);
+      Object.keys(ps).forEach(t => { (types[t] = types[t] || []).push(Object.assign({ pid }, ps[t])); }); });
+    const out = {};
+    Object.keys(types).forEach(t => { const list = types[t]; const avg = {};
+      ['velo', 'gap', 'spin', 'ivb', 'hb', 'relH', 'relS', 'ext'].forEach(k => { avg[k] = mean(list.map(x => x[k]).filter(isNum)); });
+      out[t] = { n: list.length, avg, list }; });
+    return out;
+  }
+  const refKey = () => JSON.stringify([F.from, F.to, F.kind, F.warm]);
+  /* 選手本人：サーバーに平均と順位だけ聞く（ほかの選手の値そのものは受け取らない） */
+  async function fetchTeamRef() {
+    const key = refKey(); if (TEAMREF.busy || TEAMREF.key === key) return;
+    TEAMREF.busy = true;
+    try { const j = await api('getMyTeamRef', { from: F.from, to: F.to, kind: F.kind, warm: F.warm });
+      TEAMREF = { key, data: j.ok ? (j.types || {}) : null, busy: false, err: j.ok ? '' : (j.error || '') }; }
+    catch (e) { TEAMREF = { key, data: null, busy: false, err: String(e.message || e) }; }
+    render();
+  }
+  function teamRefFor(t, hand) {
+    if (!SELF) { const r = teamRefLocal(hand)[t]; return r ? { n: r.n, avg: r.avg, list: r.list } : null; }
+    if (TEAMREF.key !== refKey()) { fetchTeamRef(); return null; }
+    const r = TEAMREF.data && TEAMREF.data[t]; return r ? { n: r.n, avg: r.avg || {}, rank: r.rank || {} } : null;
+  }
+  /* セッションごとの数字 */
+  function karteSessions(all, t) {
+    const fk = fbKeyOf(all);
+    const keys = [...new Set(all.map(r => r['測定日'] + '|' + r['種別']))].sort();
+    return keys.map(k => { const [d, kind] = k.split('|');
+      const rs = all.filter(r => r['測定日'] === d && r['種別'] === kind);
+      const tr = rs.filter(r => String(r['球種']) === t); if (!tr.length) return null;
+      const fr = fk ? rs.filter(r => String(r['球種']) === fk) : [];
+      const s = stats(tr), f = fr.length ? stats(fr) : null;
+      return { d, kind, rows: tr, s, f, gap: (t !== fk && f && isNum(f.velo) && isNum(s.velo)) ? (f.velo - s.velo) / f.velo * 100 : null };
+    }).filter(Boolean);
+  }
+  const kMark = (kind, c, x, y, r) => kind === '対戦'
+    ? `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${c}" stroke="var(--paper)" stroke-width="1.2"/>`
+    : `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="var(--paper)" stroke="${c}" stroke-width="1.8"/>`;
+  function kSpark(S, key, c, team) {
+    const w = 132, h = 38, vals = S.map(x => key === 'gap' ? x.gap : x.s[key]);
+    const pts = vals.map((v, i) => ({ v, i, kind: S[i].kind })).filter(p => isNum(p.v));
+    if (!pts.length) return '';
+    const all = pts.map(p => p.v).concat(isNum(team) ? [team] : []);
+    let lo = Math.min(...all), hi = Math.max(...all); if (hi - lo < 1e-6) { lo -= 1; hi += 1; }
+    const X = i => S.length === 1 ? w / 2 : 6 + i / (S.length - 1) * (w - 12), Y = v => h - 6 - (v - lo) / (hi - lo) * (h - 12);
+    let s = `<svg class="ch" viewBox="0 0 ${w} ${h}" style="max-width:${w}px">`;
+    if (isNum(team)) s += `<line x1="2" x2="${w - 2}" y1="${Y(team).toFixed(1)}" y2="${Y(team).toFixed(1)}" stroke="var(--muted)" stroke-dasharray="3 3" stroke-width="1"/>`;
+    if (pts.length > 1) s += `<polyline fill="none" stroke="${c}" stroke-width="1.8" points="${pts.map(p => X(p.i).toFixed(1) + ',' + Y(p.v).toFixed(1)).join(' ')}"/>`;
+    pts.forEach((p, k) => { s += kMark(p.kind, c, X(p.i), Y(p.v), k === pts.length - 1 ? 3.6 : 2.6); });
+    return s + '</svg>';
+  }
+  function kTile(S, m, c, ref, hand) {
+    const vals = S.map(x => m.k === 'gap' ? x.gap : x.s[m.k]).filter(isNum);
+    if (!vals.length) return '';
+    const last = vals[vals.length - 1], prev = vals.length > 1 ? vals[vals.length - 2] : null;
+    const d = prev == null ? null : last - prev;
+    const col = d == null || !m.good || Math.abs(d) < 1e-9 ? 'var(--ink2)' : (d * m.good > 0 ? 'var(--hit,#1e8a4c)' : 'var(--clay)');
+    const arrow = d == null ? '' : `<div class="kd" style="color:${col}">${d > 0 ? '▲' : d < 0 ? '▼' : '±'}${Math.abs(d).toFixed(m.dec)} <span>前回比</span></div>`;
+    const tv = ref && isNum(ref.avg[m.k]) ? ref.avg[m.k] : null;
+    const rk = ref && ref.rank && ref.rank[m.k];
+    const team = tv != null ? `<div class="kt">チーム${esc(hand)}投平均 ${tv.toFixed(m.dec)}${m.u}${rk ? `　${rk[0]}位/${rk[1]}人` : ''}</div>` : '';
+    const zone = m.k === 'gap' && m.zone ? (last >= ZONE_LO ? ' zone' : last >= ZONE_MID ? ' mid' : '') : '';
+    const badge = zone === ' zone' ? '<span class="kbadge">空振りゾーン</span>' : '';
+    return `<div class="ktile${zone}"><div class="kk">${esc(m.n)}</div><div class="ktv">${last.toFixed(m.dec)}<small>${m.u}</small>${badge}</div>${arrow}${kSpark(S, m.k, c, tv)}${team}</div>`;
+  }
+  function kGapChart(S, isZone, tv, c) {
+    const P = S.map((x, i) => ({ i, v: x.gap, kind: x.kind, d: x.d })).filter(p => isNum(p.v));
+    if (!P.length) return '<div class="empty">直球と同じ日に投げた記録がありません</div>';
+    const w = 420, h = 230, L = 36, R = isZone ? 70 : 12, T = 14, B = 34;
+    const vs = P.map(p => p.v).concat(isNum(tv) ? [tv] : []);
+    const lo = Math.min(4, Math.floor(Math.min(...vs) - 1)), hi = Math.max(16, Math.ceil(Math.max(...vs) + 1));
+    const X = i => S.length === 1 ? (L + w - R) / 2 : L + i / (S.length - 1) * (w - L - R), Y = v => T + (hi - v) / (hi - lo) * (h - T - B);
+    let s = `<svg class="ch" viewBox="0 0 ${w} ${h}">`;
+    if (isZone) {
+      s += `<rect x="${L}" y="${Y(hi).toFixed(1)}" width="${w - L - R}" height="${(Y(ZONE_LO) - Y(hi)).toFixed(1)}" fill="var(--hit,#1e8a4c)" opacity=".12"/>`;
+      s += `<rect x="${L}" y="${Y(ZONE_LO).toFixed(1)}" width="${w - L - R}" height="${(Y(ZONE_MID) - Y(ZONE_LO)).toFixed(1)}" fill="#c98a00" opacity=".10"/>`;
+      s += `<text x="${w - R + 8}" y="${(Y((hi + ZONE_LO) / 2) - 2).toFixed(1)}" class="lab" style="fill:var(--hit,#1e8a4c)">空振り</text><text x="${w - R + 8}" y="${(Y((hi + ZONE_LO) / 2) + 11).toFixed(1)}" class="lab" style="fill:var(--hit,#1e8a4c)">ゾーン</text>`;
+      s += `<text x="${w - R + 8}" y="${(Y(9) + 4).toFixed(1)}" style="fill:#a87400">ふつう</text><text x="${w - R + 8}" y="${(Y(Math.max(lo + 1, 6)) + 4).toFixed(1)}">差が小さい</text>`;
+    }
+    for (let v = lo; v <= hi; v += 2) s += `<line class="ax" x1="${L}" y1="${Y(v).toFixed(1)}" x2="${w - R}" y2="${Y(v).toFixed(1)}"/><text x="${L - 4}" y="${(Y(v) + 3).toFixed(1)}" text-anchor="end">${v}%</text>`;
+    if (isNum(tv)) s += `<line x1="${L}" x2="${w - R}" y1="${Y(tv).toFixed(1)}" y2="${Y(tv).toFixed(1)}" stroke="var(--muted)" stroke-dasharray="5 4" stroke-width="1.2"/><text x="${w - R - 3}" y="${(Y(tv) + 12).toFixed(1)}" text-anchor="end">チーム平均 ${tv.toFixed(1)}%</text>`;
+    if (P.length > 1) s += `<polyline fill="none" stroke="${c}" stroke-width="1.8" points="${P.map(p => X(p.i).toFixed(1) + ',' + Y(p.v).toFixed(1)).join(' ')}"/>`;
+    const step = Math.max(1, Math.ceil(S.length / 7));
+    P.forEach(p => { s += kMark(p.kind, c, X(p.i), Y(p.v), 4) + `<text x="${X(p.i).toFixed(1)}" y="${(Y(p.v) - 8).toFixed(1)}" text-anchor="middle" style="fill:var(--ink2)">${p.v.toFixed(1)}</text><title>${p.d} ${p.kind} ${p.v.toFixed(1)}%</title>`; });
+    S.forEach((x, i) => { if (i % step === 0 || i === S.length - 1) s += `<text x="${X(i).toFixed(1)}" y="${h - B + 13}" text-anchor="middle">${x.d.slice(5)}</text><text x="${X(i).toFixed(1)}" y="${h - B + 25}" text-anchor="middle" style="font-size:9px">${x.kind}</text>`; });
+    return s + '</svg>';
+  }
+  /* 日ごとの平均を矢印でつないだ散布図（変化量・リリース点で共通） */
+  function kPathChart(series, o) {
+    const ptsAll = series.flatMap(sr => sr.pts.filter(p => isNum(p.x) && isNum(p.y)));
+    if (!ptsAll.length) return '<div class="empty">データがありません</div>';
+    const xs = ptsAll.map(p => p.x).concat(o.ref ? [o.ref.x] : []).filter(isNum), ys = ptsAll.map(p => p.y).concat(o.ref ? [o.ref.y] : []).filter(isNum);
+    const px = Math.max((Math.max(...xs) - Math.min(...xs)) * .25, o.minPad), py = Math.max((Math.max(...ys) - Math.min(...ys)) * .25, o.minPad);
+    const xa = Math.min(...xs) - px, xb = Math.max(...xs) + px, ya = Math.min(...ys) - py, yb = Math.max(...ys) + py;
+    const extra = (X, Y) => {
+      let s = `<defs>${series.map((sr, k) => `<marker id="km${o.id}${k}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${sr.c}"/></marker>`).join('')}</defs>`;
+      (o.cloud || []).forEach(p => { if (isNum(p.x) && isNum(p.y) && p.x >= xa && p.x <= xb && p.y >= ya && p.y <= yb) s += `<circle cx="${X(p.x).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="2.6" fill="${p.c}" opacity=".18"/>`; });
+      if (o.ref && isNum(o.ref.x) && isNum(o.ref.y)) s += `<path d="M${X(o.ref.x).toFixed(1)},${(Y(o.ref.y) - 7).toFixed(1)} l7,7 l-7,7 l-7,-7 z" fill="var(--paper)" stroke="var(--muted)" stroke-width="1.5"><title>${esc(o.ref.t)}</title></path><text x="${(X(o.ref.x) + 9).toFixed(1)}" y="${(Y(o.ref.y) + 4).toFixed(1)}">${esc(o.ref.t)}</text>`;
+      series.forEach((sr, k) => {
+        const P = sr.pts.filter(p => isNum(p.x) && isNum(p.y)), n = P.length;
+        for (let i = 0; i < n - 1; i++) { const x1 = X(P[i].x), y1 = Y(P[i].y), x2 = X(P[i + 1].x), y2 = Y(P[i + 1].y);
+          if (Math.hypot(x2 - x1, y2 - y1) < 3) continue;
+          s += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${sr.c}" stroke-width="1.6" opacity="${(0.3 + 0.6 * (i + 1) / n).toFixed(2)}" marker-end="url(#km${o.id}${k})"/>`; }
+        P.forEach((p, i) => { s += `<g opacity="${(0.35 + 0.65 * (i + 1) / n).toFixed(2)}">${kMark(p.kind, sr.c, X(p.x), Y(p.y), i === n - 1 ? 5.5 : 3.8)}</g><title>${esc(sr.name)} ${p.d} ${p.kind}</title>`;
+          if (i === n - 1 || i === 0) s += `<text x="${(X(p.x) + 8).toFixed(1)}" y="${(Y(p.y) + (i === 0 ? 13 : -7)).toFixed(1)}" class="${i === n - 1 ? 'lab' : ''}" style="paint-order:stroke;stroke:var(--paper);stroke-width:3px${i === n - 1 ? ';fill:' + sr.c : ''}">${i === n - 1 ? esc(sr.name) + ' ' : ''}${p.d.slice(5)}</text>`; });
+      });
+      return s;
+    };
+    return scatter({ xr: [xa, xb], yr: [ya, yb], xl: o.xl, yl: o.yl, w: 420, h: 300, xticks: 5, yticks: 5, pts: [], extra, zero: false, xlabels: o.xlabels });
+  }
+  function karteCard(all, hand) {
+    const types = typesIn(all);
+    if (!types.length) return '';
+    const fk = fbKeyOf(all);
+    if (!F.kType || types.indexOf(F.kType) < 0) F.kType = fk || types[0];
+    const t = F.kType, isFB = t === fk, c = typeColor(t), isZone = !!ZONE_T[t];
+    let S = karteSessions(all, t);
+    const nAll = S.length; if (F.kRange !== 'all') S = S.slice(-6);
+    const ref = teamRefFor(t, hand), refFB = fk ? teamRefFor(fk, hand) : null;
+    const chips = `<div class="chips noprint" style="margin-bottom:8px">${types.map(x => `<button class="chip" data-kt="${esc(x)}" aria-pressed="${x === t}"><span class="sw" style="background:${typeColor(x)}"></span>${esc(jtype(x))}</button>`).join('')}
+      <span style="width:8px"></span><button class="chip" data-kr="6" aria-pressed="${F.kRange !== 'all'}">直近6回</button><button class="chip" data-kr="all" aria-pressed="${F.kRange === 'all'}">全期間（${nAll}回）</button></div>`;
+    const head = `<h3>球種カルテ　${esc(jtype(t))}<span class="u">1回＝1日の対戦またはブルペン。● 対戦　○ ブルペン　点線＝チーム${esc(hand)}投の平均（現役のみ）</span></h3>`;
+    if (!S.length) return `<div class="card karte">${head}${chips}<div class="empty">この球種の記録がありません</div></div>`;
+    const M = [{ k: 'velo', n: '平均球速', u: 'km/h', dec: 1, good: 1 }]
+      .concat(isFB ? [{ k: 'vmax', n: '最高球速', u: 'km/h', dec: 1, good: 1 }] : [{ k: 'gap', n: '直球との球速差', u: '%', dec: 1, good: isZone ? 1 : 0, zone: isZone }])
+      .concat([{ k: 'spin', n: '回転数', u: 'rpm', dec: 0, good: isFB ? 1 : 0 }, { k: 'ivb', n: '縦変化量', u: 'cm', dec: 0, good: isFB ? 1 : 0 },
+               { k: 'hb', n: '横変化量', u: 'cm', dec: 0, good: 0 }, { k: 'eff', n: '回転効率', u: '%', dec: 0, good: 0 },
+               { k: 'relH', n: 'リリース高さ', u: 'm', dec: 2, good: 0 }, { k: 'ext', n: 'エクステンション', u: 'm', dec: 2, good: 1 }]);
+    const last = S[S.length - 1];
+    const tiles = `<div class="ktiles">${M.map(m => kTile(S, m, c, ref, hand)).join('')}</div>
+      <div class="note" style="margin:6px 0 0">最新は ${last.d}（${last.kind}・${last.s.n}球）。▲▼は前回との差で、緑＝よくなった方向・赤＝下がった方向（向きに良し悪しがない項目は黒）。</div>`;
+    // 球速差
+    const gapCard = isFB ? '' : `<div class="card"><h3>直球との球速差（％）<span class="u">（その日の直球平均 − ${esc(jtype(t))}）÷ 直球平均</span></h3>${kGapChart(S, isZone, ref && ref.avg.gap, c)}
+      <div class="note" style="margin:4px 0 0">${isZone ? `緑の帯（${ZONE_LO}%以上）は、MLBの実測で空振り率が高かった範囲です。130km/hの直球なら10%＝13km/h差。` : 'この球種は、球速差より変化の大きさの方が空振りに効くため色分けしていません。'}</div></div>`;
+    // 変化量の移動
+    const mvCard = `<div class="card"><h3>変化量の移動<span class="u">日ごとの平均。薄い粒＝最新日の1球ずつ</span></h3>${kPathChart(
+      [{ name: jtype(t), c, pts: S.map(x => ({ x: x.s.hb, y: x.s.ivb, d: x.d, kind: x.kind })) }],
+      { id: 'mv', minPad: 3, xl: '横変化量 cm', yl: '縦変化量 cm', xlabels: sideLabels(), cloud: last.rows.map(r => ({ x: r['横変化量'], y: r['縦変化量'], c })),
+        ref: ref && isNum(ref.avg.hb) && isNum(ref.avg.ivb) ? { x: ref.avg.hb, y: ref.avg.ivb, t: `チーム${hand}投平均` } : null })}</div>`;
+    // フォームチェック：リリース点
+    const fbS = fk ? karteSessions(all, fk) : [];
+    const fbR = F.kRange !== 'all' ? fbS.slice(-6) : fbS;
+    const relSeries = [];
+    if (fk) relSeries.push({ name: jtype(fk), c: typeColor(fk), pts: fbR.map(x => ({ x: x.s.relS, y: x.s.relH, d: x.d, kind: x.kind })) });
+    if (!isFB) relSeries.push({ name: jtype(t), c, pts: S.map(x => ({ x: x.s.relS, y: x.s.relH, d: x.d, kind: x.kind })) });
+    const alerts = [];
+    const fbRel = fbS.filter(x => isNum(x.s.relH) && isNum(x.s.relS));
+    if (fbRel.length >= 3) {
+      const base = fbRel.slice(0, Math.min(3, fbRel.length - 1)), lr = fbRel[fbRel.length - 1];
+      const dh = (lr.s.relH - mean(base.map(x => x.s.relH))) * 100, ds = (lr.s.relS - mean(base.map(x => x.s.relS))) * 100;
+      const sideW = v => `${sideLabels()[v > 0 ? 1 : 0]}へ ${Math.abs(v).toFixed(0)}cm`;
+      if (Math.abs(dh) >= 4 || Math.abs(ds) >= 4) alerts.push(`<div class="warn"><b>要確認</b>　${esc(jtype(fk))}のリリースが、最初の${base.length}回の平均より 高さ ${dh >= 0 ? '+' : '−'}${Math.abs(dh).toFixed(0)}cm・${sideW(ds)}（${lr.d}）。腕の位置や体の傾きが変わっていないか確認してください。</div>`);
+      else alerts.push(`<div class="ok"><b>変化なし</b>　${esc(jtype(fk))}のリリースは、最初の${base.length}回の平均から 高さ ${Math.abs(dh).toFixed(0)}cm・横 ${Math.abs(ds).toFixed(0)}cm 以内です。</div>`);
+    }
+    if (!isFB && fk) {
+      const lf = fbS.find(x => x.d === last.d && x.kind === last.kind);
+      if (lf && isNum(lf.s.relH) && isNum(last.s.relH) && isNum(lf.s.relS) && isNum(last.s.relS)) {
+        const dh = (last.s.relH - lf.s.relH) * 100, ds = (last.s.relS - lf.s.relS) * 100, big = Math.max(Math.abs(dh), Math.abs(ds)) >= 5;
+        alerts.push(`<div class="${big ? 'warn' : 'ok'}"><b>${big ? 'クセに注意' : 'クセなし'}</b>　${last.d}の${esc(jtype(t))}と${esc(jtype(fk))}のリリースのずれ：高さ ${Math.abs(dh).toFixed(0)}cm・横 ${Math.abs(ds).toFixed(0)}cm（目安5cm以内）${big ? '。打者に球種を見破られやすくなります' : ''}。</div>`);
+      }
+    }
+    const relRef = refFB && isNum(refFB.avg.relS) && isNum(refFB.avg.relH) ? { x: refFB.avg.relS, y: refFB.avg.relH, t: `チーム${hand}投平均（${jtype(fk)}）` } : null;
+    const formCard = `<div class="card"><h3>フォームチェック：リリース点の移動<span class="u">日ごとの平均 m</span></h3>${kPathChart(relSeries, { id: 'rl', minPad: 0.03, xl: 'リリース横幅 m', yl: 'リリース高さ m', xlabels: sideLabels(), ref: relRef })}${alerts.join('') || '<div class="note">比べるには3回以上の記録が必要です。</div>'}</div>`;
+    // 対戦とブルペン
+    const kinds = ['ブルペン', '対戦'].filter(k => all.some(r => r['種別'] === k && String(r['球種']) === t));
+    let gbCard = '';
+    if (kinds.length === 2) {
+      const sk = k => { const rs = all.filter(r => r['種別'] === k); const st = stats(rs.filter(r => String(r['球種']) === t)); const sf = fk ? stats(rs.filter(r => String(r['球種']) === fk)) : null;
+        return { st, sf, gap: !isFB && sf && isNum(sf.velo) && isNum(st.velo) ? (sf.velo - st.velo) / sf.velo * 100 : null }; };
+      const b = sk('ブルペン'), g = sk('対戦');
+      const rowsT = [[`${jtype(t)} 平均球速`, 'km/h', x => x.st.velo, 1], !isFB ? ['直球との球速差', 'pt', x => x.gap, 1] : null, ['回転数', 'rpm', x => x.st.spin, 0],
+        ['縦変化量', 'cm', x => x.st.ivb, 1], ['横変化量', 'cm', x => x.st.hb, 1], ['リリース高さ', 'm', x => x.st.relH, 2], ['エクステンション', 'm', x => x.st.ext, 2]].filter(Boolean);
+      gbCard = `<div class="card"><h3>対戦とブルペンの比較<span class="u">この期間の平均（${esc(jtype(t))}）</span></h3><div class="tw"><table><tr><th></th><th class="n">ブルペン ○</th><th class="n">対戦 ●</th><th class="n">対戦−ブルペン</th></tr>
+        ${rowsT.map(([n, u, fn, dec]) => { const vb = fn(b), vg = fn(g); return `<tr><td>${esc(n)}</td><td class="n">${num(vb, dec)}</td><td class="n">${num(vg, dec)}</td><td class="n">${isNum(vb) && isNum(vg) ? (vg - vb >= 0 ? '+' : '−') + Math.abs(vg - vb).toFixed(dec) + `<small>${u}</small>` : '—'}</td></tr>`; }).join('')}
+        </table></div><div class="note" style="margin:4px 0 0">球数　ブルペン ${b.st.n}球・対戦 ${g.st.n}球</div></div>`;
+    }
+    // チーム内での位置
+    const me = playerTypeStats(all)[t];
+    const PM = [['平均球速', 'velo', 'km/h', 1, 1], !isFB ? ['直球との球速差', 'gap', '%', 1, 1] : null, ['回転数', 'spin', 'rpm', 0, 1], ['縦変化量', 'ivb', 'cm', 1, 0], ['横変化量', 'hb', 'cm', 1, 0], ['エクステンション', 'ext', 'm', 2, 1]].filter(Boolean);
+    let posCard = '';
+    if (ref && me) {
+      const strip = (k, dec) => { const vals = (ref.list || []).map(x => x[k]).filter(isNum); if (vals.length < 2 || !isNum(me[k])) return '';
+        let lo = Math.min(...vals), hi = Math.max(...vals); const pd = (hi - lo) * .1 || 1; lo -= pd; hi += pd; const w = 170, X = v => 6 + (v - lo) / (hi - lo) * (w - 12);
+        return `<svg class="ch" viewBox="0 0 ${w} 26" style="max-width:${w}px"><line x1="6" x2="${w - 6}" y1="13" y2="13" stroke="var(--line)" stroke-width="2"/>${vals.map(v => `<circle cx="${X(v).toFixed(1)}" cy="13" r="3.6" fill="var(--muted)" opacity=".45"/>`).join('')}${isNum(ref.avg[k]) ? `<path d="M${X(ref.avg[k]).toFixed(1)},5 l5,8 l-5,8 l-5,-8 z" fill="var(--paper)" stroke="var(--ink2)" stroke-width="1.2"/>` : ''}<circle cx="${X(me[k]).toFixed(1)}" cy="13" r="5.5" fill="${c}" stroke="var(--paper)" stroke-width="1.5"/></svg>`; };
+      const rankOf = (k, dir) => { if (ref.rank && ref.rank[k]) return ref.rank[k]; if (!dir || !ref.list) return null; const vals = ref.list.map(x => x[k]).filter(isNum); if (!isNum(me[k]) || vals.length < 2) return null; const inList = ref.list.some(x => String(x.pid) === String(F.player)); return [vals.filter(v => v > me[k] + 1e-9).length + 1, vals.length + (inList ? 0 : 1)]; };
+      posCard = `<div class="card"><h3>チーム内での位置<span class="u">現役の${esc(hand)}投 ${ref.n}人（この球種を${K_MIN}球以上）</span></h3><div class="tw"><table>
+        <tr><th></th>${SELF ? '' : '<th>● 本人　◇ 平均　灰色＝ほかの投手</th>'}<th class="n">本人</th><th class="n">平均</th><th class="n">順位</th></tr>
+        ${PM.map(([n, k, u, dec, dir]) => { const rk = rankOf(k, dir); return `<tr><td>${esc(n)}</td>${SELF ? '' : `<td>${strip(k, dec)}</td>`}<td class="n">${num(me[k], dec)}<small>${u}</small></td><td class="n">${num(ref.avg[k], dec)}</td><td class="n">${rk ? `${rk[0]}<small>/${rk[1]}人</small>` : '—'}</td></tr>`; }).join('')}
+        </table></div><div class="note" style="margin:4px 0 0">順位は大きい方が上（縦・横変化は向きに良し悪しがないので順位なし）。引退・卒業・退部の選手は入りません。</div></div>`;
+    } else if (SELF && TEAMREF.key === refKey() && !TEAMREF.data) {
+      posCard = `<div class="card"><h3>チーム内での位置</h3><div class="note" style="margin:0">${TEAMREF.err && /unknown|権限/.test(TEAMREF.err) ? 'チーム平均は、サーバー（Apps Script）の更新後に表示されます。' : 'チーム平均を取得できませんでした。'}</div></div>`;
+    }
+    const basis = `<details class="card noprint"><summary style="cursor:pointer;font-size:13px;color:var(--ink2)">空振りゾーンの根拠（MLB 2024・2025年の実測）</summary><div class="tw" style="margin-top:8px"><table>
+      <tr><th>球種</th><th class="n">MLBの中央値</th><th>直球との球速差ごとの空振り率（スイングあたり）</th><th>この画面</th></tr>
+      <tr><td>スライダー</td><td class="n">8.7%</td><td>6〜8%：30.4%　8〜10%：34.8%　<b>10〜12%：37.5%</b>　12〜14%：40.3%</td><td>10%以上を緑</td></tr>
+      <tr><td>スプリット</td><td class="n">8.6%</td><td>6〜8%：31.1%　8〜10%：35.1%　<b>10〜12%：36.5%</b>　12〜14%：46.8%</td><td>10%以上を緑</td></tr>
+      <tr><td>チェンジアップ</td><td class="n">8.4%</td><td>6〜8%：30.6%　8〜10%：31.6%　<b>10〜12%：36.4%</b>　12〜14%：34.3%</td><td>10%以上を緑</td></tr>
+      <tr><td>カーブ</td><td class="n">14.4%</td><td>差を広げても空振り率は上がらない</td><td>色分けしない</td></tr>
+      <tr><td>カット</td><td class="n">4.5%</td><td>差による違いが小さい</td><td>色分けしない</td></tr></table></div>
+      <div class="note" style="margin:6px 0 0">Baseball Savant（Statcast）の投手ごとの球種別平均球速と空振り率を集計（スライダー389・スプリット92・チェンジアップ270・カーブ192・カット197 投手シーズン）。プロの傾向なので、高校生の目安として使ってください。</div></details>`;
+    return `<div class="card karte">${head}${chips}${tiles}</div>
+      <div class="kgrid">${gapCard}${mvCard}${formCard}${gbCard}${posCard}</div>${basis}`;
+  }
+  /* 現役・引退の設定（管理者だけ）。名簿の「状態」を書き換える（記録タブの名簿と同じ場所） */
+  function retPanel() {
+    if (SELF || !F.retPanel) return '';
+    const list = ALLP.slice().sort((a, b) => (Number(a['入学年度']) || 9999) - (Number(b['入学年度']) || 9999));
+    return `<div class="card noprint"><h3>現役・引退の設定<span class="u">引退・卒業にした投手は、選手の一覧とチーム平均から外れます（記録は残ります）</span></h3>
+      ${isAdmin() ? '' : '<div class="note" style="color:var(--clay)">変更できるのは管理者だけです。</div>'}
+      <div class="tw"><table><tr><th>投手</th><th>投</th><th class="n">学年</th><th>状態</th><th></th></tr>
+      ${list.map(p => { const st = stateOf(p); const ret = RET_ST[st]; return `<tr${ret ? ' class="muted"' : ''}><td>${esc(p['氏名'])}</td><td>${esc(p['投'] || '')}</td><td class="n">${gradeOf(p) ? gradeOf(p) + '<small>年</small>' : '—'}</td><td>${esc(st || '現役')}</td>
+        <td>${isAdmin() ? `<button class="b" data-ret="${esc(p['選手ID'])}" data-to="${ret ? '' : '引退'}" ${busy ? 'disabled' : ''}>${ret ? '現役に戻す' : '引退にする'}</button>` : ''}</td></tr>`; }).join('')}
+      </table></div>
+      ${isAdmin() ? `<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="b" data-retgrade="3" ${busy ? 'disabled' : ''}>3年生をまとめて引退にする</button><button class="b" id="tm-retclose">閉じる</button></div>` : '<div style="margin-top:8px"><button class="b" id="tm-retclose">閉じる</button></div>'}</div>`;
+  }
+  async function setRetire(pids, to) {
+    if (!isAdmin() || !pids.length) return;
+    busy = true; render();
+    try {
+      const m = await api('getMaster'); if (!m.ok) throw new Error(m.error || '名簿を取れませんでした');
+      const now = Date.now();
+      const rows = (m.master.players || []).filter(p => pids.indexOf(String(p['選手ID'])) >= 0).map(p => Object.assign({}, p, { '状態': to, '更新日時': now }));
+      if (!rows.length) throw new Error('名簿に見つかりませんでした');
+      const j = await api('upsertMaster', { master: { players: rows } }); if (!j.ok) throw new Error(j.error || '保存できませんでした');
+      pids.forEach(id => { RETOV[id] = to; }); saveRetOv();
+      applyMaster(j.master || m.master); masterFresh = true;
+      msg = `${rows.length}人を「${to || '現役'}」にしました`;
+    } catch (e) { msg = String(e.message || e); }
+    busy = false; render();
   }
   function viewPlayer() {
     if (!F.player) return '<div class="empty">投手が登録されていません。「記録」タブの名簿で投手に印を付けてください。</div>';
@@ -957,7 +1250,7 @@ export function mount(ROOT, CORE) {
     const charts = `<div class="grid2">${Object.keys(CH).filter(k => on('p:chart:' + k)).map(k => CH[k]()).join('')}</div>`;
     const sess = SESSIONS.filter(s => String(s['投手ID']) === F.player).sort((a, b) => String(b['測定日']).localeCompare(String(a['測定日'])));
     const head = `<div class="note" id="print-head"><b style="font-size:14px">${esc(pname(F.player))}</b>　${esc(phand(F.player))}投　${F.from || ''}〜${F.to || '現在'}　${F.kind || '対戦・ブルペン'}　<span class="muted">作成 ${today()}　取扱注意</span></div>`;
-    return filterBar() + showPanel('player') + head + (all.length ? (on('p:kpi') ? kpis : '') + typeChips(types, all) + (on('p:table') ? table : '') + charts : '<div class="empty">この期間の記録がありません</div>')
+    return filterBar() + retPanel() + showPanel('player') + head + (all.length ? (on('p:kpi') ? kpis : '') + (on('p:karte') ? karteCard(all, phand(F.player)) : '') + typeChips(types, all) + (on('p:table') ? table : '') + charts : '<div class="empty">この期間の記録がありません</div>')
       + (sess.length && on('p:sess') ? `<div class="card noprint"><h3>この投手の取り込み</h3><div class="tw"><table><tr><th>測定日</th><th>種別</th><th class="n">球数</th><th>取り込み</th></tr>${sess.map(s => `<tr><td>${esc(s['測定日'])}</td><td>${esc(s['種別'])}</td><td class="n">${esc(s['球数'])}</td><td class="muted">${esc(String(s['取り込み日時']).slice(0, 16))}</td></tr>`).join('')}</table></div></div>` : '');
   }
 
@@ -1062,6 +1355,16 @@ export function mount(ROOT, CORE) {
   ROOT.addEventListener('click', async e => {
     const v = e.target.closest('[data-v]'); if (v) { if (!SELF) view = v.dataset.v; render(); return; }
     const g = e.target.closest('[data-goto]'); if (g) { e.preventDefault(); F.player = g.dataset.goto; view = 'player'; render(); return; }
+    const kt = e.target.closest('[data-kt]'); if (kt) { F.kType = kt.dataset.kt; render(); return; }
+    const kr = e.target.closest('[data-kr]'); if (kr) { F.kRange = kr.dataset.kr; render(); return; }
+    const rt = e.target.closest('[data-ret]'); if (rt) { const to = rt.dataset.to || ''; const p = ALLP.find(x => String(x['選手ID']) === rt.dataset.ret);
+      if (p && window.confirm(`${p['氏名']} を「${to || '現役'}」にします。よろしいですか。`)) await setRetire([rt.dataset.ret], to); return; }
+    const rg = e.target.closest('[data-retgrade]'); if (rg) {
+      const ids = ALLP.filter(p => gradeOf(p) && gradeOf(p) >= Number(rg.dataset.retgrade) && !RET_ST[stateOf(p)]).map(p => String(p['選手ID']));
+      if (!ids.length) { msg = '対象の投手がいません（入学年度が入っている現役の3年生）'; render(); return; }
+      if (window.confirm(`${ids.length}人を「引退」にします。よろしいですか。`)) await setRetire(ids, '引退'); return; }
+    if (e.target.id === 'tm-retbtn') { F.retPanel = !F.retPanel; if (F.retPanel && !masterFresh) load(); render(); return; }
+    if (e.target.id === 'tm-retclose') { F.retPanel = false; render(); return; }
     const tt = e.target.closest('[data-tt]'); if (tt) { F.hideTypes[tt.dataset.tt] = !F.hideTypes[tt.dataset.tt]; render(); return; }
     const cp = e.target.closest('[data-cmp]'); if (cp) { F.cmp[cp.dataset.cmp] = !F.cmp[cp.dataset.cmp]; render(); return; }
     const sh = e.target.closest('[data-show]'); if (sh) { SHOW[sh.dataset.show] = !on(sh.dataset.show); saveShow(); render(); return; }
@@ -1089,6 +1392,7 @@ export function mount(ROOT, CORE) {
     const qf = e.target.dataset && e.target.dataset.qforce; if (qf) { const q = QUEUE.find(x => x.id === qf); if (q) q.force = e.target.checked; render(); return; }
     const ql = e.target.dataset && e.target.dataset.qflip; if (ql) { const q = QUEUE.find(x => x.id === ql); if (q) { q.flip = e.target.checked; buildQ(q); } render(); return; }
     if (id === 'tm-player') { F.player = val; render(); return; }
+    if (id === 'tm-showret') { F.showRetired = e.target.checked; if (MASTER) applyMaster(MASTER); render(); return; }
     if (id === 'tm-from') { F.from = val; if (val && val < fetchedFrom) load(val); else render(); return; }
     if (id === 'tm-to') { F.to = val; render(); return; }
     if (id === 'tm-kindf') { F.kind = val; render(); return; }
